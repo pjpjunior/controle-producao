@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   frontend:
     container_name: app-frontend
@@ -54,7 +52,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: app_db
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./pgdata:/var/lib/postgresql/data
     networks:
       - internal_net
 
