@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ServicoStatus {
+  pendente
+  em_execucao
+  finalizado
+}
+
+model User {
+  id         Int                 @id @default(autoincrement())
+  nome       String
+  email      String              @unique
+  senhaHash  String
+  funcoes    String[]
+  createdAt  DateTime            @default(now())
+  execucoes  ServicoExecucao[]
+}
+
+model Funcao {
+  id        Int      @id @default(autoincrement())
+  nome      String   @unique
+  createdAt DateTime @default(now())
+}
+
+model Pedido {
+  id            Int        @id @default(autoincrement())
+  numeroPedido  String     @unique
+  cliente       String
+  dataCriacao   DateTime   @default(now())
+  servicos      Servico[]
+}
+
+model Servico {
+  id           Int               @id @default(autoincrement())
+  pedido       Pedido            @relation(fields: [pedidoId], references: [id])
+  pedidoId     Int
+  tipoServico  String
+  quantidade   Int
+  observacoes  String?
+  status       ServicoStatus     @default(pendente)
+  execucoes    ServicoExecucao[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model ServicoExecucao {
+  id         Int       @id @default(autoincrement())
+  servico    Servico   @relation(fields: [servicoId], references: [id])
+  servicoId  Int
+  user       User      @relation(fields: [userId], references: [id])
+  userId     Int
+  horaInicio DateTime  @default(now())
+  horaFim    DateTime?
+}
