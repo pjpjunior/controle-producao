@@ -27,7 +27,8 @@ const normalizeUsuario = (data: any): Usuario => {
     id: data.id,
     nome: data.nome,
     email: data.email,
-    funcoes: funcoesPersistidas
+    funcoes: funcoesPersistidas,
+    ativo: typeof data?.ativo === 'boolean' ? data.ativo : true
   };
 };
 

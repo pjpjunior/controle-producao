@@ -13,13 +13,14 @@ enum ServicoStatus {
 }
 
 model User {
-  id         Int                 @id @default(autoincrement())
-  nome       String
-  email      String              @unique
-  senhaHash  String
-  funcoes    String[]
-  createdAt  DateTime            @default(now())
-  execucoes  ServicoExecucao[]
+  id        Int                @id @default(autoincrement())
+  nome      String
+  email     String             @unique
+  senhaHash String
+  funcoes   String[]
+  ativo     Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  execucoes ServicoExecucao[]
 }
 
 model Funcao {
@@ -37,16 +38,16 @@ model Pedido {
 }
 
 model Servico {
-  id           Int               @id @default(autoincrement())
-  pedido       Pedido            @relation(fields: [pedidoId], references: [id])
-  pedidoId     Int
-  tipoServico  String
-  quantidade   Int
-  observacoes  String?
-  status       ServicoStatus     @default(pendente)
-  execucoes    ServicoExecucao[]
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id          Int              @id @default(autoincrement())
+  pedido      Pedido           @relation(fields: [pedidoId], references: [id])
+  pedidoId    Int
+  tipoServico String
+  quantidade  Int
+  observacoes String?
+  status      ServicoStatus    @default(pendente)
+  execucoes   ServicoExecucao[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 }
 
 model ServicoExecucao {

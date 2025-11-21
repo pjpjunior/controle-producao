@@ -75,7 +75,7 @@ router.post('/register', ensureAdminCreationRights, async (req, res) => {
 
     const senhaHash = await bcrypt.hash(senha, 10);
     const user = await prisma.user.create({
-      data: { nome, email, funcoes: funcoesNormalizadas, senhaHash }
+      data: { nome, email, funcoes: funcoesNormalizadas, senhaHash, ativo: true }
     });
 
     res.status(201).json({
@@ -83,6 +83,7 @@ router.post('/register', ensureAdminCreationRights, async (req, res) => {
       nome: user.nome,
       email: user.email,
       funcoes: user.funcoes,
+      ativo: user.ativo,
       createdAt: user.createdAt
     });
   } catch (error: any) {
@@ -108,6 +109,10 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Credenciais inválidas' });
     }
 
+    if (!user.ativo) {
+      return res.status(403).json({ message: 'Usuário inativo. Procure o administrador.' });
+    }
+
     const senhaCorreta = await bcrypt.compare(senha, user.senhaHash);
     if (!senhaCorreta) {
       return res.status(401).json({ message: 'Credenciais inválidas' });
@@ -117,7 +122,8 @@ router.post('/login', async (req, res) => {
       id: user.id,
       email: user.email,
       nome: user.nome,
-      funcoes: user.funcoes
+      funcoes: user.funcoes,
+      ativo: user.ativo
     };
     const token = generateToken(payload);
 
@@ -143,7 +149,8 @@ router.get('/me', authMiddleware, async (req, res) => {
         id: true,
         nome: true,
         email: true,
-        funcoes: true
+        funcoes: true,
+        ativo: true
       }
     });
 
@@ -161,12 +168,13 @@ router.get('/me', authMiddleware, async (req, res) => {
 router.get('/users', authMiddleware, adminOnly, async (_req, res) => {
   try {
     const users = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ ativo: 'desc' }, { createdAt: 'desc' }],
       select: {
         id: true,
         nome: true,
         email: true,
         funcoes: true,
+        ativo: true,
         createdAt: true
       }
     });
@@ -198,6 +206,10 @@ router.delete('/users/:id', authMiddleware, adminOnly, async (req, res) => {
 
 const updateFuncoesSchema = z.object({
   funcoes: funcoesArraySchema
+});
+
+const updateStatusSchema = z.object({
+  ativo: z.boolean()
 });
 
 router.patch('/users/:id/funcoes', authMiddleware, adminOnly, async (req, res) => {
@@ -284,6 +296,90 @@ router.post('/funcoes', authMiddleware, adminOnly, async (req, res) => {
       return res.status(409).json({ message: 'Função já cadastrada' });
     }
     res.status(500).json({ message: 'Não foi possível criar a função' });
+  }
+});
+
+router.delete('/funcoes/:id', authMiddleware, adminOnly, async (req, res) => {
+  const funcaoId = Number(req.params.id);
+  if (Number.isNaN(funcaoId)) {
+    return res.status(400).json({ message: 'ID inválido' });
+  }
+
+  try {
+    const funcao = await prisma.funcao.findUnique({ where: { id: funcaoId } });
+    if (!funcao) {
+      return res.status(404).json({ message: 'Função não encontrada' });
+    }
+
+    if (funcao.nome === 'admin') {
+      return res.status(400).json({ message: 'Não é permitido remover a função ADMIN.' });
+    }
+
+    const usuariosComFuncao = await prisma.user.count({
+      where: {
+        funcoes: { has: funcao.nome }
+      }
+    });
+
+    if (usuariosComFuncao > 0) {
+      return res
+        .status(400)
+        .json({ message: 'Remova a função dos usuários associados antes de excluir esta função.' });
+    }
+
+    await prisma.funcao.delete({ where: { id: funcaoId } });
+    res.json({ message: 'Função removida com sucesso' });
+  } catch (error) {
+    console.error('Erro ao remover função', error);
+    res.status(500).json({ message: 'Não foi possível remover a função' });
+  }
+});
+
+router.patch('/users/:id/status', authMiddleware, adminOnly, async (req, res) => {
+  const userId = Number(req.params.id);
+  if (Number.isNaN(userId)) {
+    return res.status(400).json({ message: 'ID inválido' });
+  }
+
+  try {
+    const { ativo } = updateStatusSchema.parse(req.body);
+    const usuario = await prisma.user.findUnique({ where: { id: userId } });
+    if (!usuario) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    if (!ativo && usuario.funcoes.includes('admin')) {
+      const adminsAtivos = await prisma.user.count({
+        where: {
+          id: { not: userId },
+          funcoes: { has: 'admin' },
+          ativo: true
+        }
+      });
+      if (adminsAtivos === 0) {
+        return res.status(400).json({ message: 'Mantenha pelo menos um administrador ativo.' });
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { ativo },
+      select: {
+        id: true,
+        nome: true,
+        email: true,
+        funcoes: true,
+        ativo: true,
+        createdAt: true
+      }
+    });
+    res.json(updated);
+  } catch (error: any) {
+    console.error('Erro ao atualizar status do usuário', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: 'Dados inválidos', errors: error.flatten() });
+    }
+    res.status(500).json({ message: 'Não foi possível atualizar o status do usuário' });
   }
 });
 

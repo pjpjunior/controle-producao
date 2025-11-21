@@ -1,0 +1,80 @@
+import { FormEvent, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+
+const LoginPage = () => {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const user = await login(email, senha);
+      const destino = user.funcoes.includes('admin') ? '/admin' : '/operador';
+      navigate(destino, { replace: true });
+    } catch (err: any) {
+      const message = err?.response?.data?.message ?? 'Não foi possível realizar o login';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center space-y-2">
+          <p className="text-sky-400 uppercase tracking-[0.3em] text-xs">Controle de Produção</p>
+          <h1 className="text-3xl font-semibold text-white">Acesse o painel</h1>
+          <p className="text-slate-400 text-sm">
+            Informe suas credenciais para registrar execuções de corte, fita, furação ou usinagem.
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
+          <div className="space-y-2">
+            <label className="text-sm text-slate-300">E-mail</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              placeholder="operador@empresa.com"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-slate-300">Senha</label>
+            <input
+              type="password"
+              value={senha}
+              onChange={(event) => setSenha(event.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          {error && (
+            <p className="text-sm text-red-400 bg-red-400/10 border border-red-500/30 rounded-xl px-4 py-2">{error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 transition text-slate-950 font-semibold py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default LoginPage;

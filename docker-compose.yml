@@ -4,14 +4,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    env_file:
-      - ./.env
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
     ports:
       - "5173:5173"
+    env_file:
+      - .env
     environment:
       VITE_API_URL: ${VITE_API_URL:-/api}
-      VITE_STRIPE_PUBLIC_KEY: ${VITE_STRIPE_PUBLIC_KEY:-pk_test_replace}
     depends_on:
       - backend
     volumes:
@@ -19,21 +18,35 @@ services:
       - /app/node_modules
     networks:
       - internal_net
+      - frontend_net
 
   backend:
     container_name: app-backend
     build:
       context: ./backend
       dockerfile: Dockerfile
-    env_file:
-      - ./.env
     command: ["npm", "run", "dev"]
+    env_file:
+      - .env
     environment:
-      NODE_ENV: development
-      PORT: 3000
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/app_db
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_replace}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      NODE_ENV: ${NODE_ENV:-development}
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - internal_net
+
+  migrations:
+    container_name: app-migrations
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["npm", "run", "prisma:migrate-deploy"]
+    env_file:
+      - .env
     depends_on:
       - postgres
     volumes:
@@ -46,19 +59,15 @@ services:
     image: postgres:15-alpine
     container_name: app-postgres
     env_file:
-      - ./.env
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: app_db
+      - .env
     volumes:
       - ./pgdata:/var/lib/postgresql/data
     networks:
       - internal_net
 
-volumes:
-  pgdata:
-
 networks:
   internal_net:
+    driver: bridge
+    internal: true
+  frontend_net:
     driver: bridge
