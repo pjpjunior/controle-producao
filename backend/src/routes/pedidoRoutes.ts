@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../config/prisma';
@@ -27,6 +28,36 @@ router.use(authMiddleware);
 const createPedidoSchema = z.object({
   numeroPedido: z.string().min(1, 'Número do pedido é obrigatório'),
   cliente: z.string().min(1, 'Cliente é obrigatório')
+});
+
+const mapServicoResponse = (
+  servico: Prisma.ServicoGetPayload<{ include: (typeof pedidoInclude)['servicos']['include'] }>,
+  includePreco: boolean
+) => ({
+  id: servico.id,
+  pedidoId: servico.pedidoId,
+  tipoServico: servico.tipoServico,
+  quantidade: servico.quantidade,
+  observacoes: servico.observacoes,
+  status: servico.status,
+  precoUnitario: includePreco ? Number(servico.precoUnitario ?? 0) : undefined,
+  execucoes: servico.execucoes.map((execucao) => ({
+    id: execucao.id,
+    horaInicio: execucao.horaInicio,
+    horaFim: execucao.horaFim,
+    user: execucao.user
+  }))
+});
+
+const mapPedidoResponse = (
+  pedido: Prisma.PedidoGetPayload<{ include: typeof pedidoInclude }>,
+  includePreco: boolean
+) => ({
+  id: pedido.id,
+  numeroPedido: pedido.numeroPedido,
+  cliente: pedido.cliente,
+  dataCriacao: pedido.dataCriacao,
+  servicos: pedido.servicos.map((servico) => mapServicoResponse(servico, includePreco))
 });
 
 router.post('/', adminOnly, async (req, res) => {
@@ -77,7 +108,7 @@ router.get('/', adminOnly, async (_req, res) => {
       orderBy: { dataCriacao: 'desc' },
       include: pedidoInclude
     });
-    res.json(pedidos);
+    res.json(pedidos.map((pedido) => mapPedidoResponse(pedido, true)));
   } catch (error) {
     console.error('Erro ao listar pedidos', error);
     res.status(500).json({ message: 'Não foi possível buscar os pedidos' });
@@ -97,7 +128,7 @@ router.get('/:id/servicos', adminOnly, async (req, res) => {
       include: pedidoInclude.servicos.include
     });
 
-    res.json(servicos);
+    res.json(servicos.map((servico) => mapServicoResponse(servico, true)));
   } catch (error) {
     console.error('Erro ao buscar serviços do pedido', error);
     res.status(500).json({ message: 'Não foi possível buscar os serviços' });
@@ -116,7 +147,8 @@ router.get('/:numeroPedido', async (req, res) => {
       return res.status(404).json({ message: 'Pedido não encontrado' });
     }
 
-    res.json(pedido);
+    const isAdmin = req.user?.funcoes.includes('admin') ?? false;
+    res.json(mapPedidoResponse(pedido, isAdmin));
   } catch (error) {
     console.error('Erro ao buscar pedido', error);
     res.status(500).json({ message: 'Não foi possível buscar o pedido' });
@@ -126,6 +158,7 @@ router.get('/:numeroPedido', async (req, res) => {
 const createServicoSchema = z.object({
   tipoServico: z.string().min(3, 'Tipo de serviço obrigatório'),
   quantidade: z.coerce.number().int().positive('Quantidade deve ser maior que zero'),
+  precoUnitario: z.coerce.number().min(0).default(0),
   observacoes: z.string().optional()
 });
 
@@ -145,6 +178,7 @@ router.post('/:id/servicos', adminOnly, async (req, res) => {
         pedidoId,
         tipoServico: data.tipoServico.toLowerCase(),
         quantidade: data.quantidade,
+        precoUnitario: data.precoUnitario ?? 0,
         observacoes: data.observacoes ?? null
       }
     });

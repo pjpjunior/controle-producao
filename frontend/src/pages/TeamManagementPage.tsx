@@ -491,7 +491,7 @@ const TeamManagementPage = () => {
                           disabled={statusUpdatingId === usuario.id}
                           onChange={(event) => toggleUsuarioAtivo(usuario.id, !event.target.checked)}
                         />
-                        <span>{statusUpdatingId === usuario.id ? 'Atualizando...' : 'Marcar como inativo'}</span>
+                        <span>{statusUpdatingId === usuario.id ? 'Atualizando...' : 'Inativo'}</span>
                       </label>
                       <button
                         onClick={() => handleDeleteUser(usuario.id)}

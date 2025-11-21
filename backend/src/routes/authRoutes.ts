@@ -95,6 +95,16 @@ router.post('/register', ensureAdminCreationRights, async (req, res) => {
   }
 });
 
+router.get('/seed-status', async (_req, res) => {
+  try {
+    const totalUsers = await prisma.user.count();
+    res.json({ hasUsers: totalUsers > 0 });
+  } catch (error) {
+    console.error('Erro ao consultar usuários existentes', error);
+    res.status(500).json({ message: 'Não foi possível verificar usuários existentes' });
+  }
+});
+
 const loginSchema = z.object({
   email: emailSchema,
   senha: z.string().min(1, 'Senha obrigatória')

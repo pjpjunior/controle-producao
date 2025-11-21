@@ -306,45 +306,48 @@ const ReportsPage = () => {
             </div>
           </div>
 
-          {isAdmin && (
-            <div className="flex flex-wrap gap-3 items-center">
-              <label htmlFor="operador" className="text-sm text-slate-400">
-                Operador:
+          <div className="flex flex-wrap gap-4 items-center">
+            {isAdmin && (
+              <div className="flex items-center gap-2">
+                <label htmlFor="operador" className="text-sm text-slate-400">
+                  Operador:
+                </label>
+                <select
+                  id="operador"
+                  value={selectedOperator}
+                  onChange={(e) => setSelectedOperator(e.target.value)}
+                  className="input md:w-64"
+                >
+                  <option value="all">Todos os operadores</option>
+                  {usuarios.map((operador) => (
+                    <option key={operador.id} value={operador.id}>
+                  {operador.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="funcao" className="text-sm text-slate-400">
+                Função/serviço:
               </label>
               <select
-                id="operador"
-                value={selectedOperator}
-                onChange={(e) => setSelectedOperator(e.target.value)}
+                id="funcao"
+                value={selectedFuncao}
+                onChange={(e) => setSelectedFuncao(e.target.value)}
                 className="input md:w-64"
+                disabled={funcoesDisponiveis.length === 0}
               >
-                <option value="all">Todos os operadores</option>
-                {usuarios.map((operador) => (
-                  <option key={operador.id} value={operador.id}>
-                    {operador.nome} ({operador.funcoes.map((funcao) => funcao.toUpperCase()).join(' / ')})
+                <option value="all">Todas as funções</option>
+                {funcoesDisponiveis.map((funcao) => (
+                  <option key={funcao} value={funcao}>
+                    {funcao.toUpperCase()}
                   </option>
                 ))}
               </select>
             </div>
-          )}
 
-          <div className="flex flex-wrap gap-3 items-center">
-            <label htmlFor="funcao" className="text-sm text-slate-400">
-              Função/serviço:
-            </label>
-            <select
-              id="funcao"
-              value={selectedFuncao}
-              onChange={(e) => setSelectedFuncao(e.target.value)}
-              className="input md:w-64"
-              disabled={funcoesDisponiveis.length === 0}
-            >
-              <option value="all">Todas as funções</option>
-              {funcoesDisponiveis.map((funcao) => (
-                <option key={funcao} value={funcao}>
-                  {funcao.toUpperCase()}
-                </option>
-              ))}
-            </select>
             {funcoesDisponiveis.length === 0 && (
               <span className="text-xs text-slate-500">Nenhum serviço encontrado no período selecionado.</span>
             )}

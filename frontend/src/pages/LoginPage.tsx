@@ -1,6 +1,11 @@
-import { FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../lib/api';
+
+type SeedStatus = {
+  hasUsers: boolean;
+};
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -10,6 +15,22 @@ const LoginPage = () => {
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seedStatus, setSeedStatus] = useState<SeedStatus | null>(null);
+
+  useEffect(() => {
+    const fetchSeedStatus = async () => {
+      try {
+        const { data } = await api.get<SeedStatus>('/auth/seed-status');
+        setSeedStatus(data);
+        if (!data.hasUsers) {
+          navigate('/primeiro-acesso', { replace: true });
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchSeedStatus();
+  }, [navigate]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -61,16 +82,24 @@ const LoginPage = () => {
               required
             />
           </div>
-          {error && (
-            <p className="text-sm text-red-400 bg-red-400/10 border border-red-500/30 rounded-xl px-4 py-2">{error}</p>
-          )}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 transition text-slate-950 font-semibold py-3 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Entrando...' : 'Entrar'}
-          </button>
+        {error && (
+          <p className="text-sm text-red-400 bg-red-400/10 border border-red-500/30 rounded-xl px-4 py-2">{error}</p>
+        )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 transition text-slate-950 font-semibold py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {loading ? 'Entrando...' : 'Entrar'}
+        </button>
+        {seedStatus && !seedStatus.hasUsers && (
+          <p className="text-sm text-slate-400 text-center">
+            Sem usuários cadastrados.{' '}
+            <Link to="/primeiro-acesso" className="text-sky-300 hover:text-sky-200">
+              Criar primeiro administrador
+            </Link>
+          </p>
+        )}
         </form>
       </div>
     </div>

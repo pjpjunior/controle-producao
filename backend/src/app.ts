@@ -5,6 +5,18 @@ import routes from './routes';
 
 const app = express();
 
+const devFallbackOrigins = new Set([
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://0.0.0.0:5173',
+  'http://192.168.15.5:5173'
+]);
+
+const allowedOrigins = new Set([
+  ...env.frontendUrls,
+  ...(env.nodeEnv === 'production' ? [] : Array.from(devFallbackOrigins))
+]);
+
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -12,7 +24,7 @@ app.use(
         return callback(null, true);
       }
 
-      if (env.frontendUrls.includes(origin) || env.frontendUrls.includes('*')) {
+      if (allowedOrigins.has(origin) || env.frontendUrls.includes('*')) {
         return callback(null, true);
       }
 

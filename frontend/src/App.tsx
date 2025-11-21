@@ -5,6 +5,7 @@ import OperatorDashboard from './pages/OperatorDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import TeamManagementPage from './pages/TeamManagementPage';
 import ReportsPage from './pages/ReportsPage';
+import FirstAccessPage from './pages/FirstAccessPage';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/primeiro-acesso" element={<FirstAccessPage />} />
         <Route
           path="/admin"
           element={
