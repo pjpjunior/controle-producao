@@ -5,12 +5,9 @@ import routes from './routes';
 
 const app = express();
 
-const devFallbackOrigins = new Set([
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://0.0.0.0:5173',
-  'http://192.168.15.5:5173'
-]);
+const devHosts = ['localhost', '127.0.0.1', '0.0.0.0', '192.168.15.5'];
+const devPorts = [5173, 8080];
+const devFallbackOrigins = new Set(devHosts.flatMap((host) => devPorts.map((port) => `http://${host}:${port}`)));
 
 const allowedOrigins = new Set([
   ...env.frontendUrls,
