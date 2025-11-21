@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../config/prisma';
@@ -15,6 +16,25 @@ const servicoInclude = {
     }
   }
 };
+
+const mapServicoExecResponse = (
+  servico: Prisma.ServicoGetPayload<{ include: typeof servicoInclude }>,
+  includePreco: boolean
+) => ({
+  id: servico.id,
+  pedidoId: servico.pedidoId,
+  tipoServico: servico.tipoServico,
+  quantidade: servico.quantidade,
+  observacoes: servico.observacoes,
+  status: servico.status,
+  precoUnitario: includePreco ? Number(servico.precoUnitario ?? 0) : undefined,
+  execucoes: servico.execucoes.map((execucao) => ({
+    id: execucao.id,
+    horaInicio: execucao.horaInicio,
+    horaFim: execucao.horaFim,
+    user: execucao.user
+  }))
+});
 
 router.use(authMiddleware);
 
@@ -132,7 +152,8 @@ router.post('/:id/iniciar', async (req, res) => {
       include: servicoInclude
     });
 
-    res.json(updated);
+    const isAdmin = req.user?.funcoes.includes('admin') ?? false;
+    res.json(mapServicoExecResponse(updated, isAdmin));
   } catch (error) {
     console.error('Erro ao iniciar serviço', error);
     res.status(500).json({ message: 'Não foi possível iniciar o serviço' });
@@ -186,7 +207,8 @@ router.post('/:id/finalizar', async (req, res) => {
       include: servicoInclude
     });
 
-    res.json(updated);
+    const isAdmin = req.user?.funcoes.includes('admin') ?? false;
+    res.json(mapServicoExecResponse(updated, isAdmin));
   } catch (error) {
     console.error('Erro ao finalizar serviço', error);
     res.status(500).json({ message: 'Não foi possível finalizar o serviço' });
@@ -197,6 +219,7 @@ router.get('/relatorios', async (req, res) => {
   try {
     const { period, userId, startDate: customStart, endDate: customEnd } = reportQuerySchema.parse(req.query);
     const requester = req.user!;
+    const includePreco = requester.funcoes.includes('admin');
 
     let targetUserId: number | null = null;
     if (!requester.funcoes.includes('admin')) {
@@ -250,8 +273,12 @@ router.get('/relatorios', async (req, res) => {
             id: true,
             tipoServico: true,
             quantidade: true,
+            precoUnitario: true,
+            observacoes: true,
+            pedidoId: true,
             pedido: {
               select: {
+                id: true,
                 numeroPedido: true,
                 cliente: true
               }
@@ -270,6 +297,7 @@ router.get('/relatorios', async (req, res) => {
         funcoes: string[];
         totalServicos: number;
         totalQuantidade: number;
+        totalValor: number;
         porServico: Record<
           string,
           {
@@ -282,36 +310,46 @@ router.get('/relatorios', async (req, res) => {
           id: number;
           servicoId: number;
           pedidoNumero: string;
+          pedidoId: number | null;
           cliente: string;
           tipoServico: string;
           quantidade: number;
+          precoUnitario?: number;
+          valorTotal?: number;
           horaInicio: Date;
           horaFim: Date | null;
+          observacoes?: string | null;
         }>;
       }
     >();
 
-    execucoes.forEach((execucao) => {
-      const operadorId = execucao.userId;
-      if (!operadoresMap.has(operadorId)) {
-        operadoresMap.set(operadorId, {
-          userId: execucao.user.id,
-          nome: execucao.user.nome,
-          funcoes: execucao.user.funcoes ?? [],
-          totalServicos: 0,
-          totalQuantidade: 0,
-          porServico: {},
-          execucoes: []
-        });
-      }
-      const operador = operadoresMap.get(operadorId)!;
-      operador.totalServicos += 1;
-      operador.totalQuantidade += execucao.servico.quantidade;
+  execucoes.forEach((execucao) => {
+    const operadorId = execucao.userId;
+    if (!operadoresMap.has(operadorId)) {
+      operadoresMap.set(operadorId, {
+        userId: execucao.user.id,
+        nome: execucao.user.nome,
+        funcoes: execucao.user.funcoes ?? [],
+        totalServicos: 0,
+        totalQuantidade: 0,
+        totalValor: 0,
+        porServico: {},
+        execucoes: []
+      });
+    }
+    const operador = operadoresMap.get(operadorId)!;
+    operador.totalServicos += 1;
+    operador.totalQuantidade += execucao.servico.quantidade;
+    const precoUnitario = Number(execucao.servico.precoUnitario ?? 0);
+    const valorTotal = precoUnitario * execucao.servico.quantidade;
+    if (includePreco) {
+      operador.totalValor += valorTotal;
+    }
 
-      const tipo = execucao.servico.tipoServico;
-      if (!operador.porServico[tipo]) {
-        operador.porServico[tipo] = {
-          tipoServico: tipo,
+    const tipo = execucao.servico.tipoServico;
+    if (!operador.porServico[tipo]) {
+      operador.porServico[tipo] = {
+        tipoServico: tipo,
           totalServicos: 0,
           totalQuantidade: 0
         };
@@ -319,27 +357,32 @@ router.get('/relatorios', async (req, res) => {
       operador.porServico[tipo].totalServicos += 1;
       operador.porServico[tipo].totalQuantidade += execucao.servico.quantidade;
 
-      operador.execucoes.push({
-        id: execucao.id,
-        servicoId: execucao.servicoId,
-        pedidoNumero: execucao.servico.pedido?.numeroPedido ?? '',
-        cliente: execucao.servico.pedido?.cliente ?? '',
-        tipoServico: tipo,
-        quantidade: execucao.servico.quantidade,
-        horaInicio: execucao.horaInicio,
-        horaFim: execucao.horaFim
-      });
+    operador.execucoes.push({
+      id: execucao.id,
+      servicoId: execucao.servicoId,
+      pedidoNumero: execucao.servico.pedido?.numeroPedido ?? '',
+      pedidoId: execucao.servico.pedidoId ?? execucao.servico.pedido?.id ?? null,
+      cliente: execucao.servico.pedido?.cliente ?? '',
+      tipoServico: tipo,
+      quantidade: execucao.servico.quantidade,
+      precoUnitario: includePreco ? precoUnitario : undefined,
+      valorTotal: includePreco ? valorTotal : undefined,
+      horaInicio: execucao.horaInicio,
+      horaFim: execucao.horaFim,
+      observacoes: execucao.servico.observacoes
     });
+  });
 
-    const operadores = Array.from(operadoresMap.values()).map((operador) => ({
-      userId: operador.userId,
-      nome: operador.nome,
-      funcoes: operador.funcoes,
-      totalServicos: operador.totalServicos,
-      totalQuantidade: operador.totalQuantidade,
-      porServico: Object.values(operador.porServico).sort((a, b) => a.tipoServico.localeCompare(b.tipoServico)),
-      execucoes: operador.execucoes
-    }));
+  const operadores = Array.from(operadoresMap.values()).map((operador) => ({
+    userId: operador.userId,
+    nome: operador.nome,
+    funcoes: operador.funcoes,
+    totalServicos: operador.totalServicos,
+    totalQuantidade: operador.totalQuantidade,
+    totalValor: includePreco ? operador.totalValor : undefined,
+    porServico: Object.values(operador.porServico).sort((a, b) => a.tipoServico.localeCompare(b.tipoServico)),
+    execucoes: operador.execucoes
+  }));
 
     res.json({
       period,

@@ -26,6 +26,7 @@ export interface Servico {
   pedidoId: number;
   tipoServico: string;
   quantidade: number;
+  precoUnitario?: number;
   observacoes?: string | null;
   status: ServicoStatus;
   execucoes: ServicoExecucao[];
@@ -44,12 +45,16 @@ export type RelatorioPeriodo = 'day' | 'week' | 'month' | 'all' | 'custom';
 export interface RelatorioExecucao {
   id: number;
   servicoId: number;
+  pedidoId: number | null;
   pedidoNumero: string;
   cliente: string;
   tipoServico: string;
   quantidade: number;
+  precoUnitario?: number;
+  valorTotal?: number;
   horaInicio: string;
   horaFim: string | null;
+  observacoes?: string | null;
 }
 
 export interface RelatorioServicoResumo {
@@ -64,6 +69,7 @@ export interface RelatorioOperador {
   funcoes: FuncaoUsuario[];
   totalServicos: number;
   totalQuantidade: number;
+  totalValor?: number;
   porServico: RelatorioServicoResumo[];
   execucoes: RelatorioExecucao[];
 }

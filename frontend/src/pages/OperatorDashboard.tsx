@@ -179,27 +179,22 @@ const OperatorDashboard = () => {
                 const podeFinalizar = servico.status === 'em_execucao';
                 return (
                   <div key={servico.id} className="border border-slate-800 rounded-2xl p-4 bg-slate-950/40 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm text-slate-400 uppercase">Serviço</p>
-                        <p className="text-lg font-semibold uppercase">{servico.tipoServico}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-lg font-semibold uppercase">{servico.tipoServico}</p>
+                          {servico.observacoes && (
+                            <span className="text-xs text-slate-400 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
+                              {servico.observacoes}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <StatusBadge status={servico.status} />
                     </div>
                     <p className="text-sm text-slate-300">
                       Quantidade: <span className="font-semibold text-white">{servico.quantidade}</span>
-                    </p>
-                    {servico.observacoes && (
-                      <p className="text-sm text-slate-400">
-                        <span className="font-semibold text-slate-300">Observações:</span> {servico.observacoes}
-                      </p>
-                    )}
-                    <p className="text-xs text-slate-400">
-                      {ultimaExecucao
-                        ? `Última atualização: ${ultimaExecucao.user.nome} ${
-                            ultimaExecucao.horaFim ? 'finalizou' : 'iniciou'
-                          } em ${new Date(ultimaExecucao.horaFim ?? ultimaExecucao.horaInicio).toLocaleString('pt-BR')}`
-                        : 'Nenhuma execução registrada'}
                     </p>
                     <div className="flex flex-wrap gap-3 pt-2">
                       <button

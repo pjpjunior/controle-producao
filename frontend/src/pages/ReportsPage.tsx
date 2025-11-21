@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { RelatorioResponse, Usuario } from '../types';
+import { RelatorioExecucao, RelatorioResponse, Usuario } from '../types';
 
 const ReportsPage = () => {
   const { user, logout } = useAuth();
@@ -20,8 +20,16 @@ const ReportsPage = () => {
   }, []);
   const [customStart, setCustomStart] = useState<string>(today);
   const [customEnd, setCustomEnd] = useState<string>(today);
+  const [selectedFuncao, setSelectedFuncao] = useState<string>('all');
+  const [removingServicoId, setRemovingServicoId] = useState<number | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const endInputRef = useRef<HTMLInputElement | null>(null);
+
+  const formatCurrency = useCallback(
+    (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+    []
+  );
 
   const fetchUsuarios = useCallback(async () => {
     if (!isAdmin) {
@@ -75,23 +83,88 @@ const ReportsPage = () => {
     fetchReport();
   }, [fetchReport]);
 
+  const showActionFeedback = useCallback((payload: { type: 'success' | 'error'; text: string }) => {
+    setActionFeedback(payload);
+  }, []);
+
+  useEffect(() => {
+    if (!actionFeedback) {
+      return;
+    }
+    const timeout = setTimeout(() => setActionFeedback(null), 4000);
+    return () => clearTimeout(timeout);
+  }, [actionFeedback]);
+
   const operadoresRaw = report?.operadores ?? [];
 
+  const funcoesDisponiveis = useMemo(() => {
+    const tipos = new Set<string>();
+    operadoresRaw.forEach((operador) => {
+      operador.porServico.forEach((servico) => tipos.add(servico.tipoServico));
+    });
+    return Array.from(tipos).sort((a, b) => a.localeCompare(b));
+  }, [operadoresRaw]);
+
+  useEffect(() => {
+    if (selectedFuncao !== 'all' && !funcoesDisponiveis.includes(selectedFuncao)) {
+      setSelectedFuncao('all');
+    }
+  }, [funcoesDisponiveis, selectedFuncao]);
+
+  const handleDeleteServico = useCallback(
+    async (servicoId: number, pedidoId: number | null, tipoServico: string) => {
+      if (!isAdmin) {
+        return;
+      }
+      if (!pedidoId) {
+        showActionFeedback({ type: 'error', text: 'Não foi possível identificar o pedido deste serviço.' });
+        return;
+      }
+      const confirmar = window.confirm(`Excluir o serviço ${tipoServico.toUpperCase()} do pedido selecionado?`);
+      if (!confirmar) {
+        return;
+      }
+      setRemovingServicoId(servicoId);
+      try {
+        await api.delete(`/pedidos/${pedidoId}/servicos/${servicoId}`);
+        showActionFeedback({ type: 'success', text: 'Serviço removido do pedido.' });
+        await fetchReport();
+      } catch (err: any) {
+        console.error(err);
+        showActionFeedback({
+          type: 'error',
+          text: err?.response?.data?.message ?? 'Erro ao remover serviço'
+        });
+      } finally {
+        setRemovingServicoId(null);
+      }
+    },
+    [fetchReport, isAdmin, showActionFeedback]
+  );
+
   const operadores = useMemo(() => {
-    if (!searchTerm.trim()) return operadoresRaw;
     const termo = searchTerm.trim().toLowerCase();
+    const filtraPorFuncao = (execucao: RelatorioExecucao) =>
+      selectedFuncao === 'all' ? true : execucao.tipoServico === selectedFuncao;
+
     return operadoresRaw
       .map((operador) => {
-        const execucoesFiltradas = operador.execucoes.filter((execucao) => {
-          const alvo = `${execucao.pedidoNumero} ${execucao.cliente} ${execucao.tipoServico}`.toLowerCase();
-          return alvo.includes(termo);
-        });
+        const execucoesPorFuncao = operador.execucoes.filter(filtraPorFuncao);
+        const execucoesFiltradas = !termo
+          ? execucoesPorFuncao
+          : execucoesPorFuncao.filter((execucao) => {
+              const alvo = `${execucao.pedidoNumero} ${execucao.cliente} ${execucao.tipoServico}`.toLowerCase();
+              return alvo.includes(termo);
+            });
 
         if (execucoesFiltradas.length === 0) {
           return null;
         }
 
         const totalQuantidade = execucoesFiltradas.reduce((acc, execucao) => acc + execucao.quantidade, 0);
+        const totalValor = isAdmin
+          ? execucoesFiltradas.reduce((acc, execucao) => acc + (execucao.valorTotal ?? 0), 0)
+          : undefined;
         const porServico = Object.values(
           execucoesFiltradas.reduce<
             Record<
@@ -117,12 +190,13 @@ const ReportsPage = () => {
           ...operador,
           totalServicos: execucoesFiltradas.length,
           totalQuantidade,
+          totalValor,
           porServico,
           execucoes: execucoesFiltradas
         };
       })
       .filter((operador): operador is (typeof operadoresRaw)[number] => Boolean(operador));
-  }, [operadoresRaw, searchTerm]);
+  }, [isAdmin, operadoresRaw, searchTerm, selectedFuncao]);
 
   const rangeLabel = useMemo(() => {
     if (!report) return '';
@@ -140,9 +214,10 @@ const ReportsPage = () => {
         (acc, operador) => {
           acc.totalServicos += operador.totalServicos;
           acc.totalQuantidade += operador.totalQuantidade;
+          acc.totalValor += operador.totalValor ?? 0;
           return acc;
         },
-        { totalServicos: 0, totalQuantidade: 0 }
+        { totalServicos: 0, totalQuantidade: 0, totalValor: 0 }
       ),
     [operadores]
   );
@@ -252,6 +327,29 @@ const ReportsPage = () => {
             </div>
           )}
 
+          <div className="flex flex-wrap gap-3 items-center">
+            <label htmlFor="funcao" className="text-sm text-slate-400">
+              Função/serviço:
+            </label>
+            <select
+              id="funcao"
+              value={selectedFuncao}
+              onChange={(e) => setSelectedFuncao(e.target.value)}
+              className="input md:w-64"
+              disabled={funcoesDisponiveis.length === 0}
+            >
+              <option value="all">Todas as funções</option>
+              {funcoesDisponiveis.map((funcao) => (
+                <option key={funcao} value={funcao}>
+                  {funcao.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            {funcoesDisponiveis.length === 0 && (
+              <span className="text-xs text-slate-500">Nenhum serviço encontrado no período selecionado.</span>
+            )}
+          </div>
+
           <div className="flex flex-col gap-2">
             <label htmlFor="search-term" className="text-sm text-slate-400">
               Buscar trabalhos
@@ -278,6 +376,18 @@ const ReportsPage = () => {
           <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-200">{error}</div>
         )}
 
+        {actionFeedback && (
+          <div
+            className={`p-3 rounded-xl border text-sm ${
+              actionFeedback.type === 'success'
+                ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200'
+                : 'border-red-500/40 bg-red-500/10 text-red-200'
+            }`}
+          >
+            {actionFeedback.text}
+          </div>
+        )}
+
         {loading ? (
           <div className="grid gap-4">
             {Array.from({ length: 3 }).map((_, index) => (
@@ -288,7 +398,7 @@ const ReportsPage = () => {
           <p className="text-sm text-slate-400">Nenhuma execução registrada para os filtros selecionados.</p>
         ) : (
           <>
-            <section className="grid md:grid-cols-3 gap-4">
+            <section className="grid md:grid-cols-3 xl:grid-cols-4 gap-4">
               <div className="card">
                 <p className="text-xs text-slate-400 uppercase">Total de operadores listados</p>
                 <p className="text-3xl font-semibold">{operadores.length}</p>
@@ -301,6 +411,12 @@ const ReportsPage = () => {
                 <p className="text-xs text-slate-400 uppercase">Quantidade total</p>
                 <p className="text-3xl font-semibold">{totaisGerais.totalQuantidade}</p>
               </div>
+              {isAdmin && (
+                <div className="card">
+                  <p className="text-xs text-slate-400 uppercase">Valor total estimado</p>
+                  <p className="text-3xl font-semibold">{formatCurrency(totaisGerais.totalValor)}</p>
+                </div>
+              )}
             </section>
 
             <section className="space-y-6">
@@ -318,6 +434,11 @@ const ReportsPage = () => {
                       <p className="text-xs text-slate-400 uppercase">Serviços registrados</p>
                       <p className="text-3xl font-semibold text-sky-300">{operador.totalServicos}</p>
                       <p className="text-xs text-slate-500">Quantidade total: {operador.totalQuantidade}</p>
+                      {isAdmin && (
+                        <p className="text-xs text-slate-500">
+                          Valor total: {formatCurrency(operador.totalValor ?? 0)}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -350,8 +471,12 @@ const ReportsPage = () => {
                               <th className="py-2 pr-4">Pedido</th>
                               <th className="py-2 pr-4">Serviço</th>
                               <th className="py-2 pr-4">Quantidade</th>
+                              <th className="py-2 pr-4">Observações</th>
+                              {isAdmin && <th className="py-2 pr-4">Preço unit.</th>}
+                              {isAdmin && <th className="py-2 pr-4">Total</th>}
                               <th className="py-2 pr-4">Início</th>
                               <th className="py-2 pr-4">Fim</th>
+                              {isAdmin && <th className="py-2 pr-4 text-right">Ações</th>}
                             </tr>
                           </thead>
                           <tbody>
@@ -363,14 +488,41 @@ const ReportsPage = () => {
                                 </td>
                                 <td className="py-2 pr-4 uppercase text-slate-300">{execucao.tipoServico}</td>
                                 <td className="py-2 pr-4 text-slate-300">{execucao.quantidade}</td>
+                                <td className="py-2 pr-4 text-slate-300 max-w-xs whitespace-pre-wrap break-words">
+                                  {execucao.observacoes?.trim() || '—'}
+                                </td>
+                                {isAdmin && (
+                                  <td className="py-2 pr-4 text-slate-300">
+                                    {formatCurrency(execucao.precoUnitario ?? 0)}
+                                  </td>
+                                )}
+                                {isAdmin && (
+                                  <td className="py-2 pr-4 text-slate-300 font-semibold">
+                                    {formatCurrency(execucao.valorTotal ?? (execucao.precoUnitario ?? 0) * execucao.quantidade)}
+                                  </td>
+                                )}
                                 <td className="py-2 pr-4 text-slate-300">
                                   {new Date(execucao.horaInicio).toLocaleString('pt-BR')}
                                 </td>
-                                <td className="py-2 pr-4 text-slate-300">
-                                  {execucao.horaFim ? new Date(execucao.horaFim).toLocaleString('pt-BR') : '—'}
+                              <td className="py-2 pr-4 text-slate-300">
+                                {execucao.horaFim ? new Date(execucao.horaFim).toLocaleString('pt-BR') : '—'}
+                              </td>
+                              {isAdmin && (
+                                <td className="py-2 pr-4 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleDeleteServico(execucao.servicoId, execucao.pedidoId, execucao.tipoServico)
+                                    }
+                                    disabled={!execucao.pedidoId || removingServicoId === execucao.servicoId}
+                                    className="text-xs px-3 py-1 rounded-lg border border-red-500/40 text-red-200 hover:bg-red-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                                  >
+                                    {removingServicoId === execucao.servicoId ? 'Excluindo...' : 'Excluir'}
+                                  </button>
                                 </td>
-                              </tr>
-                            ))}
+                              )}
+                            </tr>
+                          ))}
                           </tbody>
                         </table>
                       </div>
