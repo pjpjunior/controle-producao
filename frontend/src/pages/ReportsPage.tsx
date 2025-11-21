@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { RelatorioExecucao, RelatorioResponse, Usuario } from '../types';
+import { RelatorioExecucao, RelatorioOperador, RelatorioResponse, Usuario } from '../types';
 
 const ReportsPage = () => {
   const { user, logout } = useAuth();
@@ -25,6 +25,21 @@ const ReportsPage = () => {
   const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const startInputRef = useRef<HTMLInputElement | null>(null);
   const endInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedDatesByOperator, setSelectedDatesByOperator] = useState<Record<number, string>>({});
+
+  const getDateKey = useCallback((value: string) => {
+    const date = new Date(value);
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const formatDateLabel = useCallback((dateKey: string) => {
+    const [year, month, day] = dateKey.split('-').map((part) => Number(part));
+    const date = new Date(year, (month || 1) - 1, day || 1);
+    return date.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  }, []);
 
   const formatCurrency = useCallback(
     (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
@@ -142,13 +157,17 @@ const ReportsPage = () => {
     [fetchReport, isAdmin, showActionFeedback]
   );
 
+  type OperadorComExecucoes = RelatorioOperador & {
+    execucoesPorData: { dateKey: string; label: string; execucoes: RelatorioExecucao[] }[];
+  };
+
   const operadores = useMemo(() => {
     const termo = searchTerm.trim().toLowerCase();
     const filtraPorFuncao = (execucao: RelatorioExecucao) =>
       selectedFuncao === 'all' ? true : execucao.tipoServico === selectedFuncao;
 
     return operadoresRaw
-      .map((operador) => {
+      .map<OperadorComExecucoes | null>((operador) => {
         const execucoesPorFuncao = operador.execucoes.filter(filtraPorFuncao);
         const execucoesFiltradas = !termo
           ? execucoesPorFuncao
@@ -176,15 +195,34 @@ const ReportsPage = () => {
               }
             >
           >((acc, execucao) => {
-            const tipo = execucao.tipoServico;
-            if (!acc[tipo]) {
-              acc[tipo] = { tipoServico: tipo, totalServicos: 0, totalQuantidade: 0 };
-            }
-            acc[tipo].totalServicos += 1;
-            acc[tipo].totalQuantidade += execucao.quantidade;
-            return acc;
-          }, {})
-        ).sort((a, b) => a.tipoServico.localeCompare(b.tipoServico));
+          const tipo = execucao.tipoServico;
+          if (!acc[tipo]) {
+            acc[tipo] = { tipoServico: tipo, totalServicos: 0, totalQuantidade: 0 };
+          }
+          acc[tipo].totalServicos += 1;
+          acc[tipo].totalQuantidade += execucao.quantidade;
+          return acc;
+        }, {})
+      ).sort((a, b) => a.tipoServico.localeCompare(b.tipoServico));
+
+        const execucoesPorDataMap = execucoesFiltradas.reduce<Record<string, RelatorioExecucao[]>>((acc, execucao) => {
+          const dateKey = getDateKey(execucao.horaInicio);
+          if (!acc[dateKey]) {
+            acc[dateKey] = [];
+          }
+          acc[dateKey].push(execucao);
+          return acc;
+        }, {});
+
+        const execucoesPorData = Object.entries(execucoesPorDataMap)
+          .map(([dateKey, execucoesDia]) => ({
+            dateKey,
+            label: formatDateLabel(dateKey),
+            execucoes: execucoesDia.sort(
+              (a, b) => new Date(a.horaInicio).getTime() - new Date(b.horaInicio).getTime()
+            )
+          }))
+          .sort((a, b) => (a.dateKey > b.dateKey ? -1 : 1));
 
         return {
           ...operador,
@@ -192,11 +230,44 @@ const ReportsPage = () => {
           totalQuantidade,
           totalValor,
           porServico,
-          execucoes: execucoesFiltradas
+          execucoes: execucoesFiltradas,
+          execucoesPorData
         };
       })
-      .filter((operador): operador is (typeof operadoresRaw)[number] => Boolean(operador));
-  }, [isAdmin, operadoresRaw, searchTerm, selectedFuncao]);
+      .filter((operador): operador is OperadorComExecucoes => Boolean(operador));
+  }, [formatDateLabel, getDateKey, isAdmin, operadoresRaw, searchTerm, selectedFuncao]);
+
+  useEffect(() => {
+    setSelectedDatesByOperator((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      operadores.forEach((operador) => {
+        const dateOptions = operador.execucoesPorData.map((item) => item.dateKey);
+        if (dateOptions.length === 0) {
+          return;
+        }
+        const preferred = prev[operador.userId] && dateOptions.includes(prev[operador.userId])
+          ? prev[operador.userId]
+          : dateOptions[0];
+        if (next[operador.userId] !== preferred) {
+          next[operador.userId] = preferred;
+          changed = true;
+        }
+      });
+
+      Object.keys(next).forEach((id) => {
+        const numericId = Number(id);
+        const exists = operadores.some((op) => op.userId === numericId);
+        if (!exists) {
+          delete next[numericId];
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [operadores]);
 
   const rangeLabel = useMemo(() => {
     if (!report) return '';
@@ -401,134 +472,188 @@ const ReportsPage = () => {
           <p className="text-sm text-slate-400">Nenhuma execução registrada para os filtros selecionados.</p>
         ) : (
           <>
-            <section className="grid md:grid-cols-3 xl:grid-cols-4 gap-4">
-              <div className="card">
-                <p className="text-xs text-slate-400 uppercase">Total de operadores listados</p>
-                <p className="text-3xl font-semibold">{operadores.length}</p>
-              </div>
-              <div className="card">
-                <p className="text-xs text-slate-400 uppercase">Serviços executados</p>
-                <p className="text-3xl font-semibold">{totaisGerais.totalServicos}</p>
-              </div>
-              <div className="card">
-                <p className="text-xs text-slate-400 uppercase">Quantidade total</p>
-                <p className="text-3xl font-semibold">{totaisGerais.totalQuantidade}</p>
-              </div>
-              {isAdmin && (
+            {isAdmin && (
+              <section className="grid md:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="card">
+                  <p className="text-xs text-slate-400 uppercase">Total de operadores listados</p>
+                  <p className="text-3xl font-semibold">{operadores.length}</p>
+                </div>
+                <div className="card">
+                  <p className="text-xs text-slate-400 uppercase">Serviços executados</p>
+                  <p className="text-3xl font-semibold">{totaisGerais.totalServicos}</p>
+                </div>
+                <div className="card">
+                  <p className="text-xs text-slate-400 uppercase">Quantidade total</p>
+                  <p className="text-3xl font-semibold">{totaisGerais.totalQuantidade}</p>
+                </div>
                 <div className="card">
                   <p className="text-xs text-slate-400 uppercase">Valor total estimado</p>
                   <p className="text-3xl font-semibold">{formatCurrency(totaisGerais.totalValor)}</p>
                 </div>
-              )}
-            </section>
+              </section>
+            )}
 
             <section className="space-y-6">
               {operadores.map((operador) => (
                 <div key={operador.userId} className="card space-y-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  {isAdmin ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-slate-400 uppercase">Operador</p>
+                        <p className="text-lg font-semibold">{operador.nome}</p>
+                        <p className="text-xs text-slate-500 uppercase">
+                          {operador.funcoes.map((funcao) => funcao.toUpperCase()).join(' · ')}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400 uppercase">Serviços registrados</p>
+                        <p className="text-3xl font-semibold text-sky-300">{operador.totalServicos}</p>
+                        <p className="text-xs text-slate-500">Quantidade total: {operador.totalQuantidade}</p>
+                        <p className="text-xs text-slate-500">Valor total: {formatCurrency(operador.totalValor ?? 0)}</p>
+                      </div>
+                    </div>
+                  ) : (
                     <div>
                       <p className="text-xs text-slate-400 uppercase">Operador</p>
                       <p className="text-lg font-semibold">{operador.nome}</p>
-                      <p className="text-xs text-slate-500 uppercase">
-                        {operador.funcoes.map((funcao) => funcao.toUpperCase()).join(' · ')}
-                      </p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-slate-400 uppercase">Serviços registrados</p>
-                      <p className="text-3xl font-semibold text-sky-300">{operador.totalServicos}</p>
-                      <p className="text-xs text-slate-500">Quantidade total: {operador.totalQuantidade}</p>
-                      {isAdmin && (
-                        <p className="text-xs text-slate-500">
-                          Valor total: {formatCurrency(operador.totalValor ?? 0)}
-                        </p>
+                  )}
+
+                  {isAdmin && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-slate-300">Resumo por serviço</h4>
+                      {operador.porServico.length === 0 ? (
+                        <p className="text-xs text-slate-500">Nenhum serviço registrado neste período.</p>
+                      ) : (
+                        <div className="grid md:grid-cols-3 gap-3">
+                          {operador.porServico.map((servico) => (
+                            <div
+                              key={servico.tipoServico}
+                              className="rounded-2xl border border-slate-800 p-4 bg-slate-950/50"
+                            >
+                              <p className="text-xs uppercase text-slate-400">{servico.tipoServico}</p>
+                              <p className="text-lg font-semibold text-white">{servico.totalServicos} execuções</p>
+                              <p className="text-xs text-slate-400">Qtd. total: {servico.totalQuantidade}</p>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold text-slate-300">Resumo por serviço</h4>
-                    {operador.porServico.length === 0 ? (
-                      <p className="text-xs text-slate-500">Nenhum serviço registrado neste período.</p>
-                    ) : (
-                      <div className="grid md:grid-cols-3 gap-3">
-                        {operador.porServico.map((servico) => (
-                          <div key={servico.tipoServico} className="rounded-2xl border border-slate-800 p-4 bg-slate-950/50">
-                            <p className="text-xs uppercase text-slate-400">{servico.tipoServico}</p>
-                            <p className="text-lg font-semibold text-white">{servico.totalServicos} execuções</p>
-                            <p className="text-xs text-slate-400">Qtd. total: {servico.totalQuantidade}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  )}
 
                   <div className="space-y-3">
                     <h4 className="text-sm font-semibold text-slate-300">Execuções registradas</h4>
-                    {operador.execucoes.length === 0 ? (
+                    {operador.execucoesPorData.length === 0 ? (
                       <p className="text-xs text-slate-500">Nenhum registro encontrado.</p>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                          <thead>
-                            <tr className="text-xs uppercase text-slate-400 border-b border-slate-800">
-                              <th className="py-2 pr-4">Pedido</th>
-                              <th className="py-2 pr-4">Serviço</th>
-                              <th className="py-2 pr-4">Quantidade</th>
-                              <th className="py-2 pr-4">Observações</th>
-                              {isAdmin && <th className="py-2 pr-4">Preço unit.</th>}
-                              {isAdmin && <th className="py-2 pr-4">Total</th>}
-                              <th className="py-2 pr-4">Início</th>
-                              <th className="py-2 pr-4">Fim</th>
-                              {isAdmin && <th className="py-2 pr-4 text-right">Ações</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {operador.execucoes.map((execucao) => (
-                              <tr key={execucao.id} className="border-b border-slate-900/60 last:border-0">
-                                <td className="py-2 pr-4">
-                                  <div className="font-semibold text-slate-200">#{execucao.pedidoNumero || execucao.servicoId}</div>
-                                  <div className="text-xs text-slate-500">{execucao.cliente}</div>
-                                </td>
-                                <td className="py-2 pr-4 uppercase text-slate-300">{execucao.tipoServico}</td>
-                                <td className="py-2 pr-4 text-slate-300">{execucao.quantidade}</td>
-                                <td className="py-2 pr-4 text-slate-300 max-w-xs whitespace-pre-wrap break-words">
-                                  {execucao.observacoes?.trim() || '—'}
-                                </td>
-                                {isAdmin && (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          {operador.execucoesPorData.map((grupo) => {
+                            const isActive =
+                              (selectedDatesByOperator[operador.userId] ?? operador.execucoesPorData[0]?.dateKey) ===
+                              grupo.dateKey;
+                            return (
+                              <button
+                                key={grupo.dateKey}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedDatesByOperator((prev) => ({
+                                    ...prev,
+                                    [operador.userId]: grupo.dateKey
+                                  }))
+                                }
+                                className={`px-3 py-1 rounded-lg border text-xs uppercase ${
+                                  isActive
+                                    ? 'border-sky-400 bg-sky-400/10 text-sky-200'
+                                    : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
+                                }`}
+                              >
+                                {grupo.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm text-left">
+                            <thead>
+                              <tr className="text-xs uppercase text-slate-400 border-b border-slate-800">
+                                <th className="py-2 pr-4">Pedido</th>
+                                <th className="py-2 pr-4">Serviço</th>
+                                <th className="py-2 pr-4">Quantidade</th>
+                                <th className="py-2 pr-4">Observações</th>
+                                {isAdmin && <th className="py-2 pr-4">Preço unit.</th>}
+                                {isAdmin && <th className="py-2 pr-4">Total</th>}
+                                <th className="py-2 pr-4">Início</th>
+                                <th className="py-2 pr-4">Fim</th>
+                                {isAdmin && <th className="py-2 pr-4 text-right">Ações</th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(operador.execucoesPorData.find(
+                                (grupo) =>
+                                  grupo.dateKey ===
+                                  (selectedDatesByOperator[operador.userId] ?? operador.execucoesPorData[0]?.dateKey)
+                              )?.execucoes ?? []
+                              ).map((execucao) => (
+                                <tr key={execucao.id} className="border-b border-slate-900/60 last:border-0">
+                                  <td className="py-2 pr-4">
+                                    <div className="font-semibold text-slate-200">
+                                      #{execucao.pedidoNumero || execucao.servicoId}
+                                    </div>
+                                    <div className="text-xs text-slate-500">{execucao.cliente}</div>
+                                  </td>
+                                  <td className="py-2 pr-4 uppercase text-slate-300">{execucao.tipoServico}</td>
+                                  <td className="py-2 pr-4 text-slate-300">{execucao.quantidade}</td>
+                                  <td className="py-2 pr-4 text-slate-300 max-w-xs whitespace-pre-wrap break-words">
+                                    {execucao.observacoes?.trim() || '—'}
+                                  </td>
+                                  {isAdmin && (
+                                    <td className="py-2 pr-4 text-slate-300">
+                                      {formatCurrency(execucao.precoUnitario ?? 0)}
+                                    </td>
+                                  )}
+                                  {isAdmin && (
+                                    <td className="py-2 pr-4 text-slate-300 font-semibold">
+                                      {formatCurrency(
+                                        execucao.valorTotal ?? (execucao.precoUnitario ?? 0) * execucao.quantidade
+                                      )}
+                                    </td>
+                                  )}
                                   <td className="py-2 pr-4 text-slate-300">
-                                    {formatCurrency(execucao.precoUnitario ?? 0)}
+                                    {new Date(execucao.horaInicio).toLocaleTimeString('pt-BR', {
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
                                   </td>
-                                )}
-                                {isAdmin && (
-                                  <td className="py-2 pr-4 text-slate-300 font-semibold">
-                                    {formatCurrency(execucao.valorTotal ?? (execucao.precoUnitario ?? 0) * execucao.quantidade)}
+                                  <td className="py-2 pr-4 text-slate-300">
+                                    {execucao.horaFim
+                                      ? new Date(execucao.horaFim).toLocaleTimeString('pt-BR', {
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        })
+                                      : '—'}
                                   </td>
-                                )}
-                                <td className="py-2 pr-4 text-slate-300">
-                                  {new Date(execucao.horaInicio).toLocaleString('pt-BR')}
-                                </td>
-                              <td className="py-2 pr-4 text-slate-300">
-                                {execucao.horaFim ? new Date(execucao.horaFim).toLocaleString('pt-BR') : '—'}
-                              </td>
-                              {isAdmin && (
-                                <td className="py-2 pr-4 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleDeleteServico(execucao.servicoId, execucao.pedidoId, execucao.tipoServico)
-                                    }
-                                    disabled={!execucao.pedidoId || removingServicoId === execucao.servicoId}
-                                    className="text-xs px-3 py-1 rounded-lg border border-red-500/40 text-red-200 hover:bg-red-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
-                                  >
-                                    {removingServicoId === execucao.servicoId ? 'Excluindo...' : 'Excluir'}
-                                  </button>
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                          </tbody>
-                        </table>
-                      </div>
+                                  {isAdmin && (
+                                    <td className="py-2 pr-4 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleDeleteServico(execucao.servicoId, execucao.pedidoId, execucao.tipoServico)
+                                        }
+                                        disabled={!execucao.pedidoId || removingServicoId === execucao.servicoId}
+                                        className="text-xs px-3 py-1 rounded-lg border border-red-500/40 text-red-200 hover:bg-red-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
+                                      >
+                                        {removingServicoId === execucao.servicoId ? 'Excluindo...' : 'Excluir'}
+                                      </button>
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
