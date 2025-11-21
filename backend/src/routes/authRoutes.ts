@@ -2,7 +2,7 @@ import { NextFunction, Request, Response, Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import prisma from '../config/prisma';
-import { authMiddleware, generateToken } from '../middlewares/auth';
+import { authMiddleware, authMiddlewareWithUserCheck, generateToken } from '../middlewares/auth';
 import { adminOnly } from '../middlewares/adminOnly';
 
 const router = Router();
@@ -147,7 +147,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/me', authMiddleware, async (req, res) => {
+router.get('/me', authMiddlewareWithUserCheck, async (req, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: 'Token inválido' });
@@ -175,7 +175,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 });
 
-router.get('/users', authMiddleware, adminOnly, async (_req, res) => {
+router.get('/users', authMiddlewareWithUserCheck, adminOnly, async (_req, res) => {
   try {
     const users = await prisma.user.findMany({
       orderBy: [{ ativo: 'desc' }, { createdAt: 'desc' }],
@@ -196,7 +196,7 @@ router.get('/users', authMiddleware, adminOnly, async (_req, res) => {
   }
 });
 
-router.delete('/users/:id', authMiddleware, adminOnly, async (req, res) => {
+router.delete('/users/:id', authMiddlewareWithUserCheck, adminOnly, async (req, res) => {
   const userId = Number(req.params.id);
   if (Number.isNaN(userId)) {
     return res.status(400).json({ message: 'ID inválido' });
@@ -222,7 +222,7 @@ const updateStatusSchema = z.object({
   ativo: z.boolean()
 });
 
-router.patch('/users/:id/funcoes', authMiddleware, adminOnly, async (req, res) => {
+router.patch('/users/:id/funcoes', authMiddlewareWithUserCheck, adminOnly, async (req, res) => {
   const userId = Number(req.params.id);
   if (Number.isNaN(userId)) {
     return res.status(400).json({ message: 'ID inválido' });
@@ -345,7 +345,7 @@ router.delete('/funcoes/:id', authMiddleware, adminOnly, async (req, res) => {
   }
 });
 
-router.patch('/users/:id/status', authMiddleware, adminOnly, async (req, res) => {
+router.patch('/users/:id/status', authMiddlewareWithUserCheck, adminOnly, async (req, res) => {
   const userId = Number(req.params.id);
   if (Number.isNaN(userId)) {
     return res.status(400).json({ message: 'ID inválido' });

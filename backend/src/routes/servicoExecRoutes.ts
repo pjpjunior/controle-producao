@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../config/prisma';
-import { authMiddleware } from '../middlewares/auth';
+import { authMiddlewareWithUserCheck as authMiddleware } from '../middlewares/auth';
 
 const router = Router();
 

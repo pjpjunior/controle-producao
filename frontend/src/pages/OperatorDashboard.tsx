@@ -100,36 +100,24 @@ const OperatorDashboard = () => {
       return;
     }
 
-    const executadoAnterior = execucaoAberta
-      ? executado - (execucaoAberta.quantidadeExecutada ?? 0)
-      : executado;
-
     const quantidadeInput = window.prompt(
-      `Quanto foi produzido até agora?\nTotal: ${servico.quantidade} peças · Produzido: ${executado} · Falta: ${restante} peças.`,
+      `Quanto foi produzido nesta retomada?\nJá produzido: ${executado} · Falta: ${restante} (total ${servico.quantidade}).`,
       ''
     );
     if (quantidadeInput === null) {
       return;
     }
-    const produzidoTotal = Number(quantidadeInput.replace(',', '.'));
-    if (!Number.isFinite(produzidoTotal) || produzidoTotal < 0) {
+    const incremento = Number(quantidadeInput.replace(',', '.'));
+    if (!Number.isFinite(incremento) || incremento < 0) {
       setMessage({ type: 'error', text: 'Informe uma quantidade válida (zero ou mais).' });
       return;
     }
-    if (produzidoTotal < executadoAnterior) {
-      setMessage({
-        type: 'error',
-        text: `Valor informado é menor do que o já produzido (${executadoAnterior}).`
-      });
-      return;
-    }
-    if (produzidoTotal > servico.quantidade) {
-      setMessage({ type: 'error', text: `Quantidade não pode ser maior que o total (${servico.quantidade}).` });
+    if (incremento > restante) {
+      setMessage({ type: 'error', text: `Quantidade não pode ser maior que o restante (${restante}).` });
       return;
     }
 
-    const produzidoNestaEtapa = Math.max(0, Math.floor(produzidoTotal - executadoAnterior));
-    const vaiFinalizar = produzidoTotal === servico.quantidade;
+    const vaiFinalizar = executado + incremento === servico.quantidade;
 
     let motivo: string | undefined;
     if (!vaiFinalizar) {
@@ -143,7 +131,7 @@ const OperatorDashboard = () => {
     try {
       if (vaiFinalizar) {
         const { data } = await api.post<Servico>(`/servicos/${servico.id}/finalizar`, {
-          quantidadeExecutada: produzidoNestaEtapa
+          quantidadeExecutada: Math.floor(incremento)
         });
 
         const ultimaExecucao = data.execucoes.find((execucao) => execucao.horaFim) ?? data.execucoes[0];
@@ -156,8 +144,32 @@ const OperatorDashboard = () => {
           type: 'success',
           text: `Serviço finalizado${duracao ? ` em ${duracao}` : '!'}`
         });
+
+        // Efeito visual de comemoração (confete leve, carregado sob demanda)
+        import('canvas-confetti')
+          .then((confetti) => {
+            const count = 180;
+            const defaults = { origin: { y: 0.6 } };
+            const fire = (particleRatio: number, opts: Record<string, unknown>) => {
+              confetti.default({
+                ...defaults,
+                ...opts,
+                particleCount: Math.floor(count * particleRatio)
+              });
+            };
+
+            // "Realistic look" preset inspirado na doc do canvas-confetti
+            fire(0.25, { spread: 26, startVelocity: 55 });
+            fire(0.2, { spread: 60 });
+            fire(0.35, { spread: 100, decay: 0.91, scalar: 0.9 });
+            fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+            fire(0.1, { spread: 120, startVelocity: 45 });
+          })
+          .catch(() => {
+            // Sem impacto se o efeito não carregar
+          });
       } else {
-        const payload: any = { quantidadeExecutada: produzidoNestaEtapa };
+        const payload: any = { quantidadeExecutada: Math.floor(incremento) };
         if (motivo) {
           payload.motivo = motivo;
         }

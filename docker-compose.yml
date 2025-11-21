@@ -69,9 +69,10 @@ services:
       retries: 10
       start_period: 5s
     networks:
-      - internal_net
+      internal_net:
+        aliases:
+          - postgres
 
 networks:
   internal_net:
     driver: bridge
-    internal: true

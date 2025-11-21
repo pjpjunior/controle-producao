@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import env from '../config/env';
+import prisma from '../config/prisma';
 
 export interface AuthenticatedUser {
   id: number;
@@ -52,6 +53,56 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
       funcoes: funcoesToken,
       ativo: typeof decoded.ativo === 'boolean' ? decoded.ativo : true
     };
+    next();
+  } catch (error) {
+    console.error('Erro ao validar token', error);
+    return res.status(401).json({ message: 'Token expirado ou inválido' });
+  }
+};
+
+export const authMiddlewareWithUserCheck = async (req: Request, res: Response, next: NextFunction) => {
+  const { authorization } = req.headers;
+
+  if (!authorization) {
+    return res.status(401).json({ message: 'Token não fornecido' });
+  }
+
+  const [, token] = authorization.split(' ');
+
+  if (!token) {
+    return res.status(401).json({ message: 'Token inválido' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, env.jwtSecret) as AuthTokenPayload;
+    const funcoesToken =
+      Array.isArray(decoded.funcoes) && decoded.funcoes.length > 0
+        ? decoded.funcoes
+        : decoded.funcao
+          ? [decoded.funcao]
+          : [];
+
+    const userRecord = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, email: true, nome: true, funcoes: true, ativo: true }
+    });
+
+    if (!userRecord) {
+      return res.status(401).json({ message: 'Usuário não encontrado ou inativo' });
+    }
+
+    if (!userRecord.ativo) {
+      return res.status(403).json({ message: 'Usuário inativo. Procure o administrador.' });
+    }
+
+    req.user = {
+      id: userRecord.id,
+      email: userRecord.email,
+      nome: userRecord.nome,
+      funcoes: funcoesToken.length ? funcoesToken : userRecord.funcoes,
+      ativo: true
+    };
+
     next();
   } catch (error) {
     console.error('Erro ao validar token', error);
