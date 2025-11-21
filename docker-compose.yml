@@ -18,7 +18,6 @@ services:
       - /app/node_modules
     networks:
       - internal_net
-      - frontend_net
 
   backend:
     container_name: app-backend
@@ -76,5 +75,3 @@ networks:
   internal_net:
     driver: bridge
     internal: true
-  frontend_net:
-    driver: bridge
