@@ -218,9 +218,9 @@ const ReportsPage = () => {
           .map(([dateKey, execucoesDia]) => ({
             dateKey,
             label: formatDateLabel(dateKey),
-            execucoes: execucoesDia.sort(
-              (a, b) => new Date(a.horaInicio).getTime() - new Date(b.horaInicio).getTime()
-            )
+            execucoes: execucoesDia
+              .slice()
+              .sort((a, b) => new Date(b.horaInicio).getTime() - new Date(a.horaInicio).getTime())
           }))
           .sort((a, b) => (a.dateKey > b.dateKey ? -1 : 1));
 
@@ -607,6 +607,9 @@ const ReportsPage = () => {
                                   <td className="py-2 pr-4 text-slate-300">{execucao.quantidade}</td>
                                   <td className="py-2 pr-4 text-slate-300 max-w-xs whitespace-pre-wrap break-words">
                                     {execucao.observacoes?.trim() || '—'}
+                                    {execucao.motivoPausa && (
+                                      <span className="block text-xs text-amber-300">Pausa: {execucao.motivoPausa}</span>
+                                    )}
                                   </td>
                                   {isAdmin && (
                                     <td className="py-2 pr-4 text-slate-300">

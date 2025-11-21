@@ -5,6 +5,24 @@ import { useAuth } from '../context/AuthContext';
 import { Pedido, Servico } from '../types';
 import StatusBadge from '../components/StatusBadge';
 
+const calcularProgressoServico = (servico: Servico) => {
+  const executado = servico.execucoes.reduce((total, execucao) => total + (execucao.quantidadeExecutada ?? 0), 0);
+  const restante = Math.max(servico.quantidade - executado, 0);
+  return { executado, restante };
+};
+
+const formatarDuracao = (ms: number) => {
+  const totalSegundos = Math.max(Math.floor(ms / 1000), 0);
+  const horas = Math.floor(totalSegundos / 3600);
+  const minutos = Math.floor((totalSegundos % 3600) / 60);
+  const segundos = totalSegundos % 60;
+  const partes = [];
+  if (horas) partes.push(`${horas}h`);
+  if (minutos) partes.push(`${minutos}min`);
+  if (!horas && segundos) partes.push(`${segundos}s`);
+  return partes.join(' ') || '0s';
+};
+
 const OperatorDashboard = () => {
   const { user, logout, refreshUser } = useAuth();
 
@@ -69,16 +87,88 @@ const OperatorDashboard = () => {
     }
   };
 
-  const finalizarServico = async (servico: Servico) => {
+  const registrarProducao = async (servico: Servico) => {
+    const { executado, restante } = calcularProgressoServico(servico);
+    if (restante <= 0) {
+      setMessage({ type: 'error', text: 'Este serviço já atingiu a quantidade prevista.' });
+      return;
+    }
+
+    const execucaoAberta = servico.execucoes.find((execucao) => !execucao.horaFim);
+    if (!execucaoAberta) {
+      setMessage({ type: 'error', text: 'Nenhuma execução aberta encontrada para este serviço.' });
+      return;
+    }
+
+    const executadoAnterior = execucaoAberta
+      ? executado - (execucaoAberta.quantidadeExecutada ?? 0)
+      : executado;
+
+    const quantidadeInput = window.prompt(
+      `Quanto foi produzido até agora?\nTotal: ${servico.quantidade} peças · Produzido: ${executado} · Falta: ${restante} peças.`,
+      ''
+    );
+    if (quantidadeInput === null) {
+      return;
+    }
+    const produzidoTotal = Number(quantidadeInput.replace(',', '.'));
+    if (!Number.isFinite(produzidoTotal) || produzidoTotal < 0) {
+      setMessage({ type: 'error', text: 'Informe uma quantidade válida (zero ou mais).' });
+      return;
+    }
+    if (produzidoTotal < executadoAnterior) {
+      setMessage({
+        type: 'error',
+        text: `Valor informado é menor do que o já produzido (${executadoAnterior}).`
+      });
+      return;
+    }
+    if (produzidoTotal > servico.quantidade) {
+      setMessage({ type: 'error', text: `Quantidade não pode ser maior que o total (${servico.quantidade}).` });
+      return;
+    }
+
+    const produzidoNestaEtapa = Math.max(0, Math.floor(produzidoTotal - executadoAnterior));
+    const vaiFinalizar = produzidoTotal === servico.quantidade;
+
+    let motivo: string | undefined;
+    if (!vaiFinalizar) {
+      const motivoInput = window.prompt('Qual o motivo da pausa?', '');
+      motivo = motivoInput ? motivoInput : undefined;
+    }
+
     setActionLoading(servico.id);
     setMessage(null);
+
     try {
-      await api.post(`/servicos/${servico.id}/finalizar`);
-      setMessage({ type: 'success', text: 'Serviço finalizado!' });
+      if (vaiFinalizar) {
+        const { data } = await api.post<Servico>(`/servicos/${servico.id}/finalizar`, {
+          quantidadeExecutada: produzidoNestaEtapa
+        });
+
+        const ultimaExecucao = data.execucoes.find((execucao) => execucao.horaFim) ?? data.execucoes[0];
+        const duracao =
+          ultimaExecucao && ultimaExecucao.horaFim
+            ? formatarDuracao(new Date(ultimaExecucao.horaFim).getTime() - new Date(ultimaExecucao.horaInicio).getTime())
+            : null;
+
+        setMessage({
+          type: 'success',
+          text: `Serviço finalizado${duracao ? ` em ${duracao}` : '!'}`
+        });
+      } else {
+        const payload: any = { quantidadeExecutada: produzidoNestaEtapa };
+        if (motivo) {
+          payload.motivo = motivo;
+        }
+        await api.post(`/servicos/${servico.id}/pausar`, payload);
+        setMessage({ type: 'success', text: 'Pausa registrada.' });
+      }
+
       await refreshPedido();
     } catch (error: any) {
       console.error(error);
-      setMessage({ type: 'error', text: error?.response?.data?.message ?? 'Erro ao finalizar serviço' });
+      setMessage({ type: 'error', text: error?.response?.data?.message ?? 'Erro ao registrar produção' });
     } finally {
       setActionLoading(null);
     }
@@ -174,9 +264,9 @@ const OperatorDashboard = () => {
                 <p className="text-sm text-slate-400">Nenhum serviço atribuído à sua função para este pedido.</p>
               )}
               {servicosVisiveis.map((servico) => {
-                const ultimaExecucao = servico.execucoes[0];
-                const podeIniciar = servico.status === 'pendente';
-                const podeFinalizar = servico.status === 'em_execucao';
+                const podeIniciar = servico.status === 'pendente' || servico.status === 'pausado';
+                const podeRegistrar = servico.status === 'em_execucao';
+                const { executado, restante } = calcularProgressoServico(servico);
                 return (
                   <div key={servico.id} className="border border-slate-800 rounded-2xl p-4 bg-slate-950/40 space-y-2">
                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -196,6 +286,10 @@ const OperatorDashboard = () => {
                     <p className="text-sm text-slate-300">
                       Quantidade: <span className="font-semibold text-white">{servico.quantidade}</span>
                     </p>
+                    <p className="text-xs text-slate-400">
+                      Produzido: <span className="text-white font-semibold">{executado}</span> · Restam{' '}
+                      <span className="text-white font-semibold">{restante}</span>
+                    </p>
                     <div className="flex flex-wrap gap-3 pt-2">
                       <button
                         type="button"
@@ -203,17 +297,22 @@ const OperatorDashboard = () => {
                         disabled={!podeIniciar || actionLoading === servico.id}
                         className="btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {actionLoading === servico.id && podeIniciar ? 'Registrando...' : 'Iniciar'}
+                        {actionLoading === servico.id && podeIniciar ? 'Registrando...' : servico.status === 'pausado' ? 'Retomar' : 'Iniciar'}
                       </button>
                       <button
                         type="button"
-                        onClick={() => finalizarServico(servico)}
-                        disabled={!podeFinalizar || actionLoading === servico.id}
+                        onClick={() => registrarProducao(servico)}
+                        disabled={!podeRegistrar || actionLoading === servico.id}
                         className="btn-accent disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        {actionLoading === servico.id && podeFinalizar ? 'Finalizando...' : 'Finalizar'}
+                        {actionLoading === servico.id && podeRegistrar ? 'Salvando...' : 'Pausar / Finalizar'}
                       </button>
                     </div>
+                    {servico.status === 'pausado' && (
+                      <p className="text-xs text-amber-300">
+                        Serviço pausado. Retome quando o material estiver disponível ou quando voltar do intervalo.
+                      </p>
+                    )}
                   </div>
                 );
               })}

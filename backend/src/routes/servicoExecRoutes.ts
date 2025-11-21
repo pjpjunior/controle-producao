@@ -32,6 +32,8 @@ const mapServicoExecResponse = (
     id: execucao.id,
     horaInicio: execucao.horaInicio,
     horaFim: execucao.horaFim,
+    motivoPausa: execucao.motivoPausa,
+    quantidadeExecutada: execucao.quantidadeExecutada,
     user: execucao.user
   }))
 });
@@ -100,6 +102,26 @@ const normalizeEndOfDay = (date: Date) => {
   return normalized;
 };
 
+const calcularTotalExecutado = async (servicoId: number, ignorarExecucaoId?: number) => {
+  const aggregate = await prisma.servicoExecucao.aggregate({
+    where: {
+      servicoId,
+      ...(ignorarExecucaoId ? { NOT: { id: ignorarExecucaoId } } : {})
+    },
+    _sum: { quantidadeExecutada: true }
+  });
+  return Number(aggregate._sum.quantidadeExecutada ?? 0);
+};
+
+const pauseSchema = z.object({
+  quantidadeExecutada: z.coerce.number().int().min(0, 'Quantidade inválida').default(0),
+  motivo: z.string().max(200, 'Motivo deve ter no máximo 200 caracteres').optional()
+});
+
+const finalizarSchema = z.object({
+    quantidadeExecutada: z.coerce.number().int().min(0, 'Quantidade inválida').default(0)
+});
+
 router.post('/:id/iniciar', async (req, res) => {
   const servicoId = Number(req.params.id);
   if (Number.isNaN(servicoId)) {
@@ -160,6 +182,78 @@ router.post('/:id/iniciar', async (req, res) => {
   }
 });
 
+router.post('/:id/pausar', async (req, res) => {
+  const servicoId = Number(req.params.id);
+  if (Number.isNaN(servicoId)) {
+    return res.status(400).json({ message: 'ID inválido' });
+  }
+
+  try {
+    const { motivo, quantidadeExecutada } = pauseSchema.parse(req.body ?? {});
+
+    const servico = await prisma.servico.findUnique({
+      where: { id: servicoId }
+    });
+
+    if (!servico) {
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+
+    if (!ensurePermission(req.user!.funcoes, servico.tipoServico)) {
+      return res.status(403).json({ message: 'Você não tem permissão para executar este serviço' });
+    }
+
+    if (servico.status !== 'em_execucao') {
+      return res.status(400).json({ message: 'Serviço não está em execução no momento' });
+    }
+
+    const execucaoAberta = await prisma.servicoExecucao.findFirst({
+      where: {
+        servicoId,
+        userId: req.user!.id,
+        horaFim: null
+      },
+      orderBy: { horaInicio: 'desc' }
+    });
+
+    if (!execucaoAberta) {
+      return res.status(400).json({ message: 'Nenhuma execução aberta encontrada para este serviço' });
+    }
+
+    const totalExecutado = await calcularTotalExecutado(servicoId, execucaoAberta.id);
+    const restante = Math.max(servico.quantidade - totalExecutado, 0);
+    if (quantidadeExecutada > restante) {
+      return res
+        .status(400)
+        .json({ message: `Quantidade informada excede o restante do serviço. Restam ${restante} peças.` });
+    }
+
+    await prisma.servicoExecucao.update({
+      where: { id: execucaoAberta.id },
+      data: {
+        horaFim: new Date(),
+        motivoPausa: motivo?.trim() || null,
+        quantidadeExecutada
+      }
+    });
+
+    const updated = await prisma.servico.update({
+      where: { id: servicoId },
+      data: { status: 'pausado' },
+      include: servicoInclude
+    });
+
+    const isAdmin = req.user?.funcoes.includes('admin') ?? false;
+    res.json(mapServicoExecResponse(updated, isAdmin));
+  } catch (error: any) {
+    console.error('Erro ao pausar serviço', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: 'Dados inválidos', errors: error.flatten() });
+    }
+    res.status(500).json({ message: 'Não foi possível pausar o serviço' });
+  }
+});
+
 router.post('/:id/finalizar', async (req, res) => {
   const servicoId = Number(req.params.id);
   if (Number.isNaN(servicoId)) {
@@ -167,6 +261,8 @@ router.post('/:id/finalizar', async (req, res) => {
   }
 
   try {
+    const { quantidadeExecutada } = finalizarSchema.parse(req.body ?? {});
+
     const servico = await prisma.servico.findUnique({
       where: { id: servicoId }
     });
@@ -196,9 +292,17 @@ router.post('/:id/finalizar', async (req, res) => {
       return res.status(400).json({ message: 'Nenhuma execução aberta encontrada para este serviço' });
     }
 
+    const totalExecutado = await calcularTotalExecutado(servicoId, execucaoAberta.id);
+    const restante = Math.max(servico.quantidade - totalExecutado, 0);
+    if (quantidadeExecutada > restante) {
+      return res
+        .status(400)
+        .json({ message: `Quantidade informada excede o restante do serviço. Restam ${restante} peças.` });
+    }
+
     await prisma.servicoExecucao.update({
       where: { id: execucaoAberta.id },
-      data: { horaFim: new Date() }
+      data: { horaFim: new Date(), quantidadeExecutada }
     });
 
     const updated = await prisma.servico.update({
@@ -318,6 +422,7 @@ router.get('/relatorios', async (req, res) => {
           valorTotal?: number;
           horaInicio: Date;
           horaFim: Date | null;
+          motivoPausa?: string | null;
           observacoes?: string | null;
         }>;
       }
@@ -339,9 +444,10 @@ router.get('/relatorios', async (req, res) => {
     }
     const operador = operadoresMap.get(operadorId)!;
     operador.totalServicos += 1;
-    operador.totalQuantidade += execucao.servico.quantidade;
+    const quantidadeExecutada = execucao.quantidadeExecutada ?? execucao.servico.quantidade;
+    operador.totalQuantidade += quantidadeExecutada;
     const precoUnitario = Number(execucao.servico.precoUnitario ?? 0);
-    const valorTotal = precoUnitario * execucao.servico.quantidade;
+    const valorTotal = precoUnitario * quantidadeExecutada;
     if (includePreco) {
       operador.totalValor += valorTotal;
     }
@@ -350,12 +456,12 @@ router.get('/relatorios', async (req, res) => {
     if (!operador.porServico[tipo]) {
       operador.porServico[tipo] = {
         tipoServico: tipo,
-          totalServicos: 0,
-          totalQuantidade: 0
-        };
-      }
-      operador.porServico[tipo].totalServicos += 1;
-      operador.porServico[tipo].totalQuantidade += execucao.servico.quantidade;
+        totalServicos: 0,
+        totalQuantidade: 0
+      };
+    }
+    operador.porServico[tipo].totalServicos += 1;
+    operador.porServico[tipo].totalQuantidade += execucao.servico.quantidade;
 
     operador.execucoes.push({
       id: execucao.id,
@@ -364,11 +470,12 @@ router.get('/relatorios', async (req, res) => {
       pedidoId: execucao.servico.pedidoId ?? execucao.servico.pedido?.id ?? null,
       cliente: execucao.servico.pedido?.cliente ?? '',
       tipoServico: tipo,
-      quantidade: execucao.servico.quantidade,
+      quantidade: quantidadeExecutada,
       precoUnitario: includePreco ? precoUnitario : undefined,
       valorTotal: includePreco ? valorTotal : undefined,
       horaInicio: execucao.horaInicio,
       horaFim: execucao.horaFim,
+      motivoPausa: execucao.motivoPausa,
       observacoes: execucao.servico.observacoes
     });
   });

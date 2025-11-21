@@ -1,6 +1,6 @@
 export type FuncaoUsuario = 'admin' | 'corte' | 'fita' | 'furacao' | 'usinagem' | 'montagem' | 'expedicao' | string;
 
-export type ServicoStatus = 'pendente' | 'em_execucao' | 'finalizado';
+export type ServicoStatus = 'pendente' | 'em_execucao' | 'pausado' | 'finalizado';
 
 export interface Usuario {
   id: number;
@@ -19,6 +19,8 @@ export interface ServicoExecucao {
   };
   horaInicio: string;
   horaFim?: string | null;
+  motivoPausa?: string | null;
+  quantidadeExecutada?: number;
 }
 
 export interface Servico {
@@ -55,6 +57,7 @@ export interface RelatorioExecucao {
   horaInicio: string;
   horaFim: string | null;
   observacoes?: string | null;
+  motivoPausa?: string | null;
 }
 
 export interface RelatorioServicoResumo {

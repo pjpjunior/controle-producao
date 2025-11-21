@@ -45,6 +45,8 @@ const mapServicoResponse = (
     id: execucao.id,
     horaInicio: execucao.horaInicio,
     horaFim: execucao.horaFim,
+    quantidadeExecutada: execucao.quantidadeExecutada,
+    motivoPausa: execucao.motivoPausa,
     user: execucao.user
   }))
 });
@@ -91,7 +93,20 @@ router.delete('/:id', adminOnly, async (req, res) => {
   }
 
   try {
-    await prisma.pedido.delete({ where: { id: pedidoId } });
+    const execucoesCount = await prisma.servicoExecucao.count({
+      where: { servico: { pedidoId } }
+    });
+
+    if (execucoesCount > 0) {
+      return res
+        .status(400)
+        .json({ message: 'Não é possível excluir pedidos que já tiveram execuções registradas.' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.servico.deleteMany({ where: { pedidoId } });
+      await tx.pedido.delete({ where: { id: pedidoId } });
+    });
     res.json({ message: 'Pedido removido com sucesso' });
   } catch (error: any) {
     console.error('Erro ao remover pedido', error);

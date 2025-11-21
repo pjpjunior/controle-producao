@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Pedido } from '../types';
-import StatusBadge from '../components/StatusBadge';
 
 const DEFAULT_SERVICE_OPTIONS = ['corte', 'fita', 'furacao', 'usinagem', 'montagem', 'expedicao'];
 
@@ -12,6 +11,7 @@ type ServicoSelecionado = {
   tipo: string;
   quantidade: number;
   precoUnitario: number;
+  precoUnitarioInput: string;
   observacoes: string;
 };
 
@@ -37,6 +37,21 @@ const AdminDashboard = () => {
   });
   const [novoServicoSelecionado, setNovoServicoSelecionado] = useState<string>('');
   const servicoIdCounter = useRef(0);
+
+  const parseQuantidadeInput = (valor: string) => {
+    const cleaned = valor.replace(/\D/g, '');
+    return cleaned ? Number(cleaned) : 0;
+  };
+
+  const parsePrecoInput = (valor: string) => {
+    const normalized = valor.replace(',', '.').replace(/[^0-9.]/g, '');
+    if (!normalized) return 0;
+    const [inteiro, ...decimais] = normalized.split('.');
+    const decimalPart = decimais.join('').slice(0, 2);
+    const final = decimalPart ? `${inteiro || '0'}.${decimalPart}` : inteiro || '0';
+    const parsed = Number(final);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
   const showFeedback = useCallback((type: 'success' | 'error', message: string) => {
     setFeedback({ type, message });
@@ -104,6 +119,7 @@ const AdminDashboard = () => {
       tipo,
       quantidade: 0,
       precoUnitario: 0,
+      precoUnitarioInput: '',
       observacoes: ''
     }),
     [servicoIdCounter]
@@ -368,23 +384,30 @@ const AdminDashboard = () => {
                               <label className="flex items-center gap-2 text-slate-400 text-sm">
                                 <span className="uppercase text-xs">Qtd.</span>
                                 <input
-                                  type="number"
-                                  min={0}
-                                  value={servico.quantidade}
-                                  onChange={(e) => handleUpdateServico(servico.id, { quantidade: Number(e.target.value) })}
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  value={servico.quantidade === 0 ? '' : String(servico.quantidade)}
+                                  onChange={(e) =>
+                                    handleUpdateServico(servico.id, { quantidade: parseQuantidadeInput(e.target.value) })
+                                  }
                                   className="w-24 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-right"
                                 />
                               </label>
                               <label className="flex items-center gap-2 text-slate-400 text-sm">
                                 <span className="uppercase text-xs">Preço unit.</span>
                                 <input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  value={servico.precoUnitario}
-                                  onChange={(e) =>
-                                    handleUpdateServico(servico.id, { precoUnitario: Number(e.target.value) })
-                                  }
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={servico.precoUnitarioInput}
+                                  placeholder="0,00"
+                                  onChange={(e) => {
+                                    const texto = e.target.value;
+                                    handleUpdateServico(servico.id, {
+                                      precoUnitario: parsePrecoInput(texto),
+                                      precoUnitarioInput: texto
+                                    });
+                                  }}
                                   className="w-28 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-right"
                                 />
                               </label>
@@ -441,19 +464,14 @@ const AdminDashboard = () => {
           ) : (
             <div className="space-y-4">
               {formattedPedidos.map((pedido) => (
-                <div key={pedido.id} className="card space-y-4">
+                <div key={pedido.id} className="card space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <p className="text-xs text-slate-400 uppercase">Pedido</p>
-                      <p className="text-lg font-semibold">#{pedido.numeroPedido}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-400 uppercase">Cliente</p>
-                      <p className="text-lg">{pedido.cliente}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-400 uppercase">Criado em</p>
-                      <p className="text-lg">{pedido.dataFormatada}</p>
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
+                      <span className="font-semibold text-white">Pedido #{pedido.numeroPedido}</span>
+                      <span className="text-slate-500">|</span>
+                      <span>Cliente {pedido.cliente}</span>
+                      <span className="text-slate-500">|</span>
+                      <span>Criado em {pedido.dataFormatada}</span>
                     </div>
                     <button
                       onClick={() => handleDeletePedido(pedido.id, pedido.numeroPedido)}
@@ -463,74 +481,42 @@ const AdminDashboard = () => {
                     </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="text-sm text-slate-300">
+                    Valor bruto:{' '}
+                    <span className="font-semibold text-white">
+                      {pedido.servicos
+                        .reduce(
+                          (acc, servico) => acc + (Number(servico.precoUnitario ?? 0) * servico.quantidade),
+                          0
+                        )
+                        .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
                     {pedido.servicos.length === 0 && (
                       <p className="text-sm text-slate-400">Nenhum serviço adicionado para este pedido.</p>
                     )}
                     {pedido.servicos.map((servico) => {
-                      const precoUnitario = servico.precoUnitario ?? 0;
+                      const precoUnitario = Number(servico.precoUnitario ?? 0);
                       const valorTotal = precoUnitario * servico.quantidade;
                       return (
-                        <div key={servico.id} className="border border-slate-800 rounded-2xl p-4 bg-slate-950/40 space-y-3">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <div className="text-lg font-semibold uppercase">{servico.tipoServico}</div>
-                              {servico.observacoes && (
-                                <span className="text-xs text-slate-400 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1">
-                                  {servico.observacoes}
-                                </span>
-                              )}
-                            </div>
-                            <StatusBadge status={servico.status} />
+                        <div
+                          key={servico.id}
+                          className="border border-slate-800 rounded-2xl p-3 bg-slate-950/40 text-sm text-slate-300"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-semibold uppercase text-white">{servico.tipoServico}</span>
+                            <span className="font-semibold text-white">
+                              {valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
                           </div>
-                          <div className="grid sm:grid-cols-3 gap-2 text-sm text-slate-300">
-                            <p>
-                              Quantidade: <span className="font-semibold text-white">{servico.quantidade}</span>
-                            </p>
-                            <p>
-                              Preço unit.:{' '}
-                              <span className="font-semibold text-white">
-                                {precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                              </span>
-                            </p>
-                            <p>
-                              Total:{' '}
-                              <span className="font-semibold text-white">
-                                {valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                              </span>
-                            </p>
+                          <div className="text-xs text-slate-400 mt-1">
+                            Qtde: <span className="text-white font-semibold">{servico.quantidade}</span> · Preço unit.:{' '}
+                            <span className="text-white font-semibold">
+                              {precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
                           </div>
-                          {servico.execucoes.length > 0 && (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm text-left">
-                                <thead>
-                                  <tr className="text-xs uppercase text-slate-400 border-b border-slate-800">
-                                    <th className="py-2">Operador</th>
-                                    <th className="py-2">Função</th>
-                                    <th className="py-2">Início</th>
-                                    <th className="py-2">Fim</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {servico.execucoes.map((execucao) => (
-                                    <tr key={execucao.id} className="border-b border-slate-900/60 last:border-0">
-                                      <td className="py-2 text-slate-200">{execucao.user.nome}</td>
-                                      <td className="py-2 text-slate-400 uppercase">
-                                        {execucao.user.funcoes.map((funcao) => funcao.toUpperCase()).join(' / ')}
-                                      </td>
-                                      <td className="py-2 text-slate-300">
-                                        {new Date(execucao.horaInicio).toLocaleString('pt-BR')}
-                                      </td>
-                                      <td className="py-2 text-slate-300">
-                                        {execucao.horaFim ? new Date(execucao.horaFim).toLocaleString('pt-BR') : '—'}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-
                         </div>
                       );
                     })}
