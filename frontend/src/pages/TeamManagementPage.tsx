@@ -1,8 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { FuncaoUsuario, Usuario } from '../types';
+import AdminNavBar from '../components/AdminNavBar';
 
 interface UsuarioDetalhado extends Usuario {
   createdAt: string;
@@ -16,7 +16,7 @@ interface FuncaoDisponivel {
 }
 
 const TeamManagementPage = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [usuarios, setUsuarios] = useState<UsuarioDetalhado[]>([]);
   const [funcoesDisponiveis, setFuncoesDisponiveis] = useState<FuncaoDisponivel[]>([]);
   const [funcoesLoading, setFuncoesLoading] = useState(true);
@@ -280,34 +280,7 @@ const TeamManagementPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4 justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-sky-400">Controle de Produção</p>
-            <h1 className="text-xl font-semibold">Gestão de Funcionários</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium">{user?.nome}</p>
-              <p className="text-xs text-slate-400">{user?.email}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link to="/admin" className="btn-secondary text-slate-200">
-                Painel
-              </Link>
-              <Link to="/relatorios" className="btn-secondary text-slate-200">
-                Relatórios
-              </Link>
-              <button
-                onClick={logout}
-                className="px-4 py-2 rounded-xl border border-slate-700 hover:border-red-400 hover:text-red-300 transition text-sm"
-              >
-                Sair
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AdminNavBar title="Gestão de Funcionários" subtitle="Crie usuários, atribua funções e status" />
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-10">
         {feedback && (

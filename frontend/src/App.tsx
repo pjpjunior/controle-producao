@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import TeamManagementPage from './pages/TeamManagementPage';
 import ReportsPage from './pages/ReportsPage';
 import FirstAccessPage from './pages/FirstAccessPage';
+import ServiceCatalogAdminPage from './pages/ServiceCatalogAdminPage';
 
 function App() {
   return (
@@ -27,6 +28,14 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <TeamManagementPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/catalogo-servicos"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <ServiceCatalogAdminPage />
             </ProtectedRoute>
           }
         />

@@ -1,18 +1,24 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../lib/api';
-import { useAuth } from '../context/AuthContext';
 import { Pedido } from '../types';
+import AdminNavBar from '../components/AdminNavBar';
 
-const DEFAULT_SERVICE_OPTIONS = ['corte', 'fita', 'furacao', 'usinagem', 'montagem', 'expedicao'];
+type ServicoCatalogo = {
+  id: number;
+  nome: string;
+  funcao: string;
+  precoPadrao: number;
+  createdAt: string;
+};
 
 type ServicoSelecionado = {
   id: string;
-  tipo: string;
+  catalogoId: number | null;
+  nome: string;
+  funcao: string;
   quantidade: number;
   precoUnitario: number;
   precoUnitarioInput: string;
-  observacoes: string;
 };
 
 interface FuncaoDisponivel {
@@ -22,20 +28,17 @@ interface FuncaoDisponivel {
 }
 
 const AdminDashboard = () => {
-  const { user, logout } = useAuth();
-
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [serviceOptions, setServiceOptions] = useState<string[]>([]);
-  const [serviceOptionsLoading, setServiceOptionsLoading] = useState(true);
+  const [catalogo, setCatalogo] = useState<ServicoCatalogo[]>([]);
+  const [catalogoLoading, setCatalogoLoading] = useState(true);
 
   const [novoPedidoForm, setNovoPedidoForm] = useState({
     numeroPedido: '',
     cliente: '',
     servicos: [] as ServicoSelecionado[]
   });
-  const [novoServicoSelecionado, setNovoServicoSelecionado] = useState<string>('');
   const servicoIdCounter = useRef(0);
 
   const parseQuantidadeInput = (valor: string) => {
@@ -58,29 +61,18 @@ const AdminDashboard = () => {
     setTimeout(() => setFeedback(null), 4500);
   }, []);
 
-  const syncServiceOptions = useCallback((options: string[]) => {
-    setServiceOptions(options);
-    setNovoPedidoForm((previous) => ({
-      ...previous,
-      servicos: previous.servicos.filter((servico) => options.includes(servico.tipo))
-    }));
-    setNovoServicoSelecionado((current) => (options.includes(current) ? current : ''));
-  }, []);
-
-  const fetchFuncoesOperacionais = useCallback(async () => {
-    setServiceOptionsLoading(true);
+  const fetchCatalogo = useCallback(async () => {
+    setCatalogoLoading(true);
     try {
-      const { data } = await api.get<FuncaoDisponivel[]>('/auth/funcoes');
-      const operacionais = data.map((funcao) => funcao.nome).filter((nome) => nome !== 'admin');
-      syncServiceOptions(operacionais);
+      const { data } = await api.get<ServicoCatalogo[]>('/catalogo-servicos');
+      setCatalogo(data);
     } catch (error) {
       console.error(error);
-      showFeedback('error', 'Não foi possível carregar as funções de serviço');
-      syncServiceOptions(DEFAULT_SERVICE_OPTIONS);
+      showFeedback('error', 'Não foi possível carregar o catálogo de serviços');
     } finally {
-      setServiceOptionsLoading(false);
+      setCatalogoLoading(false);
     }
-  }, [showFeedback, syncServiceOptions]);
+  }, [showFeedback]);
 
   const fetchPedidos = useCallback(async () => {
     setLoading(true);
@@ -100,40 +92,32 @@ const AdminDashboard = () => {
   }, [fetchPedidos]);
 
   useEffect(() => {
-    fetchFuncoesOperacionais();
-  }, [fetchFuncoesOperacionais]);
-
-  useEffect(() => {
-    if (serviceOptions.length === 0) {
-      setNovoServicoSelecionado('');
-      return;
-    }
-    if (!novoServicoSelecionado || !serviceOptions.includes(novoServicoSelecionado)) {
-      setNovoServicoSelecionado(serviceOptions[0]);
-    }
-  }, [novoServicoSelecionado, serviceOptions]);
+    fetchCatalogo();
+  }, [fetchCatalogo]);
 
   const createServicoSelecionado = useCallback(
-    (tipo: string): ServicoSelecionado => ({
+    (item: ServicoCatalogo | null): ServicoSelecionado => ({
       id: `serv-${Date.now()}-${servicoIdCounter.current++}`,
-      tipo,
-      quantidade: 0,
-      precoUnitario: 0,
-      precoUnitarioInput: '',
-      observacoes: ''
+      catalogoId: item?.id ?? null,
+      nome: item?.nome ?? '',
+      funcao: item?.funcao ?? '',
+      quantidade: 1,
+      precoUnitario: item?.precoPadrao ?? 0,
+      precoUnitarioInput: item ? item.precoPadrao.toFixed(2).replace('.', ',') : ''
     }),
     [servicoIdCounter]
   );
 
   const handleAddServico = () => {
-    if (!novoServicoSelecionado) {
-      return;
+    const first = catalogo[0] ?? null;
+    if (!first) {
+      return showFeedback('error', 'Cadastre itens no catálogo de serviços antes de adicionar linhas.');
     }
     setNovoPedidoForm((prev) => ({
       ...prev,
       servicos: [
         ...prev.servicos,
-        createServicoSelecionado(novoServicoSelecionado)
+        createServicoSelecionado(first)
       ]
     }));
   };
@@ -157,10 +141,12 @@ const AdminDashboard = () => {
     if (serviceOptions.length === 0) {
       return showFeedback('error', 'Cadastre funções de serviço antes de criar pedidos.');
     }
-    const servicosValidos = novoPedidoForm.servicos.filter((servico) => servico.quantidade && servico.quantidade > 0);
+    const servicosValidos = novoPedidoForm.servicos.filter(
+      (servico) => servico.quantidade && servico.quantidade > 0 && servico.funcao
+    );
 
     if (servicosValidos.length === 0) {
-      return showFeedback('error', 'Informe ao menos um serviço com quantidade maior que zero.');
+      return showFeedback('error', 'Informe ao menos um serviço com função e quantidade maior que zero.');
     }
 
     try {
@@ -172,10 +158,10 @@ const AdminDashboard = () => {
       try {
         for (const servico of servicosValidos) {
           await api.post(`/pedidos/${pedido.id}/servicos`, {
-            tipoServico: servico.tipo,
+            tipoServico: servico.funcao,
             quantidade: servico.quantidade,
             precoUnitario: servico.precoUnitario ?? 0,
-            observacoes: servico.observacoes?.trim() ? servico.observacoes.trim() : undefined
+            observacoes: servico.nome ? servico.nome : undefined
           });
         }
         showFeedback('success', `Pedido ${novoPedidoForm.numeroPedido} cadastrado com ${servicosValidos.length} serviço(s).`);
@@ -244,34 +230,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-sky-400">Controle de Produção</p>
-            <h1 className="text-xl font-semibold">Painel do Administrador</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium">{user?.nome}</p>
-              <p className="text-xs text-slate-400">{user?.email}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link to="/admin/gestao" className="btn-secondary text-slate-200">
-                Gestão
-              </Link>
-              <Link to="/relatorios" className="btn-secondary text-slate-200">
-                Relatórios
-              </Link>
-              <button
-                onClick={logout}
-                className="px-4 py-2 rounded-xl border border-slate-700 hover:border-red-400 hover:text-red-300 transition text-sm"
-              >
-                Sair
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AdminNavBar title="Painel do Administrador" subtitle="Criar pedidos e atribuir serviços" />
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-10">
         {feedback && (
@@ -290,88 +249,128 @@ const AdminDashboard = () => {
           <form onSubmit={handleCreatePedido} className="card space-y-4">
             <div>
               <h2 className="text-lg font-semibold">Criar Pedido</h2>
-              <p className="text-sm text-slate-400">Insira o número do pedido.</p>
+              <p className="text-sm text-slate-400">Informe número e cliente, adicione linhas de serviço e salve o pedido.</p>
             </div>
-            <input
-              placeholder="Número do pedido"
-              value={novoPedidoForm.numeroPedido}
-              onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, numeroPedido: e.target.value })}
-              className="input"
-              required
-            />
-            <input
-              placeholder="Cliente"
-              value={novoPedidoForm.cliente}
-              onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, cliente: e.target.value })}
-              className="input"
-              required
-            />
-            <div className="space-y-3">
-              <p className="text-sm text-slate-400">Selecione os serviços abaixo, informe quantidades e preços.</p>
-              {serviceOptionsLoading ? (
-                <div className="grid md:grid-cols-2 gap-3">
-                  {Array.from({ length: 4 }).map((_, index) => (
-                    <div key={index} className="h-32 rounded-2xl bg-slate-900/70 animate-pulse" />
-                  ))}
-                </div>
-              ) : serviceOptions.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  Cadastre funções operacionais para liberar os serviços disponíveis.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap gap-3 items-center">
-                    <select
-                      value={novoServicoSelecionado}
-                      onChange={(e) => setNovoServicoSelecionado(e.target.value)}
-                      className="input w-full md:w-64"
-                      disabled={serviceOptions.length === 0}
-                    >
-                      <option value="" disabled>
-                        Selecione um serviço
-                      </option>
-                      {serviceOptions.map((tipo) => (
-                        <option key={tipo} value={tipo}>
-                          {tipo.toUpperCase()}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={handleAddServico}
-                      disabled={!novoServicoSelecionado}
-                      className="btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      + Adicionar serviço
-                    </button>
-                  </div>
+            <div className="grid md:grid-cols-3 gap-3">
+              <input
+                placeholder="Número do pedido"
+                value={novoPedidoForm.numeroPedido}
+                onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, numeroPedido: e.target.value })}
+                className="input"
+                required
+              />
+              <input
+                placeholder="Cliente"
+                value={novoPedidoForm.cliente}
+                onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, cliente: e.target.value })}
+                className="input"
+                required
+              />
+              <button type="submit" className="btn-primary w-full md:w-auto">
+                Salvar pedido
+              </button>
+            </div>
 
-                  {novoPedidoForm.servicos.length === 0 ? (
-                    <p className="text-sm text-slate-500">Nenhum serviço selecionado ainda.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {novoPedidoForm.servicos.map((servico, index) => {
-                        const total = servico.quantidade * servico.precoUnitario;
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-slate-400">Planilha de serviços</p>
+              <button
+                type="button"
+                onClick={handleAddServico}
+                disabled={catalogo.length === 0}
+                className="btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                + Adicionar linha
+              </button>
+            </div>
+
+            {catalogoLoading ? (
+              <div className="grid md:grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="h-32 rounded-2xl bg-slate-900/70 animate-pulse" />
+                ))}
+              </div>
+            ) : catalogo.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Cadastre itens no catálogo de serviços para liberar as linhas de pedido.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40">
+                <table className="min-w-full text-sm text-slate-200">
+                  <thead className="bg-slate-900/60 text-left uppercase text-xs tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2">Serviço</th>
+                      <th className="px-3 py-2 w-32">Qtd.</th>
+                      <th className="px-3 py-2 w-32">Preço</th>
+                      <th className="px-3 py-2 w-24 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {novoPedidoForm.servicos.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-4 text-sm text-slate-500 text-center">
+                          Nenhum serviço na planilha. Clique em Salvar para inserir uma linha e depois ajuste serviço,
+                          quantidade e preço.
+                        </td>
+                      </tr>
+                    ) : (
+                      novoPedidoForm.servicos.map((servico) => {
                         return (
-                          <div
-                            key={servico.id}
-                            className="border border-slate-800 rounded-2xl px-4 py-3 bg-slate-950/40 space-y-3"
-                          >
-                            <div className="flex flex-wrap items-center gap-3 justify-between">
-                              <div className="flex flex-col">
-                                <span className="text-xs text-slate-500 uppercase">Serviço #{index + 1}</span>
-                                <select
-                                  value={servico.tipo}
-                                  onChange={(e) => handleUpdateServico(servico.id, { tipo: e.target.value })}
-                                  className="input mt-1 w-40 uppercase"
-                                >
-                                  {serviceOptions.map((tipo) => (
-                                    <option key={`${servico.id}-${tipo}`} value={tipo}>
-                                      {tipo.toUpperCase()}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
+                          <tr key={servico.id} className="border-t border-slate-800">
+                            <td className="px-3 py-2">
+                              <select
+                                value={servico.catalogoId ?? ''}
+                                onChange={(e) => {
+                                  const novoId = Number(e.target.value);
+                                  const item = catalogo.find((c) => c.id === novoId) ?? null;
+                                  handleUpdateServico(servico.id, {
+                                    catalogoId: item?.id ?? null,
+                                    nome: item?.nome ?? '',
+                                    funcao: item?.funcao ?? '',
+                                    precoUnitario: item?.precoPadrao ?? servico.precoUnitario,
+                                    precoUnitarioInput: item ? item.precoPadrao.toFixed(2).replace('.', ',') : servico.precoUnitarioInput
+                                  });
+                                }}
+                                className="input w-full uppercase"
+                              >
+                                <option value="" disabled>
+                                  Selecione
+                                </option>
+                                {catalogo.map((item) => (
+                                  <option key={`${servico.id}-${item.id}`} value={item.id}>
+                                    {item.nome}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={servico.quantidade === 0 ? '' : String(servico.quantidade)}
+                                onChange={(e) =>
+                                  handleUpdateServico(servico.id, { quantidade: parseQuantidadeInput(e.target.value) })
+                                }
+                                className="input text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={servico.precoUnitarioInput}
+                                placeholder="0,00"
+                                onChange={(e) => {
+                                  const texto = e.target.value;
+                                  handleUpdateServico(servico.id, {
+                                    precoUnitario: parsePrecoInput(texto),
+                                    precoUnitarioInput: texto
+                                  });
+                                }}
+                                className="input text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
                               <button
                                 type="button"
                                 onClick={() => handleRemoveServico(servico.id)}
@@ -379,66 +378,16 @@ const AdminDashboard = () => {
                               >
                                 Remover
                               </button>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-3">
-                              <label className="flex items-center gap-2 text-slate-400 text-sm">
-                                <span className="uppercase text-xs">Qtd.</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  value={servico.quantidade === 0 ? '' : String(servico.quantidade)}
-                                  onChange={(e) =>
-                                    handleUpdateServico(servico.id, { quantidade: parseQuantidadeInput(e.target.value) })
-                                  }
-                                  className="w-24 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-right"
-                                />
-                              </label>
-                              <label className="flex items-center gap-2 text-slate-400 text-sm">
-                                <span className="uppercase text-xs">Preço unit.</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={servico.precoUnitarioInput}
-                                  placeholder="0,00"
-                                  onChange={(e) => {
-                                    const texto = e.target.value;
-                                    handleUpdateServico(servico.id, {
-                                      precoUnitario: parsePrecoInput(texto),
-                                      precoUnitarioInput: texto
-                                    });
-                                  }}
-                                  className="w-28 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-right"
-                                />
-                              </label>
-                              <div className="ml-auto text-right text-sm font-semibold text-slate-200">
-                                Total{' '}
-                                {Number.isFinite(total)
-                                  ? total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                  : 'R$ 0,00'}
-                              </div>
-                            </div>
-                            <div>
-                              <label className="text-xs uppercase text-slate-500 block mb-1">Observações</label>
-                              <textarea
-                                value={servico.observacoes}
-                                onChange={(e) => handleUpdateServico(servico.id, { observacoes: e.target.value })}
-                                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-                                rows={2}
-                                placeholder="Ex.: Necessário material específico, prioridade etc."
-                              />
-                            </div>
-                          </div>
+                            </td>
+                          </tr>
                         );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            <button type="submit" className="btn-primary">
-              Salvar pedido e serviços selecionados
-            </button>
+                      })
+                    )}
+
+                  </tbody>
+                </table>
+              </div>
+            )}
           </form>
         </section>
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { RelatorioExecucao, RelatorioOperador, RelatorioResponse, Usuario } from '../types';
+import AdminNavBar from '../components/AdminNavBar';
 
 const ReportsPage = () => {
   const { user, logout } = useAuth();
@@ -295,38 +296,36 @@ const ReportsPage = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4 justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-sky-400">Controle de Produção</p>
-            <h1 className="text-xl font-semibold">Relatórios de Execução</h1>
-            <p className="text-xs text-slate-400">{rangeLabel}</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium">{user?.nome}</p>
-              <p className="text-xs text-slate-400">{user?.email}</p>
+      {isAdmin ? (
+        <AdminNavBar title="Relatórios de Execução" subtitle={rangeLabel} />
+      ) : (
+        <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur">
+          <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center gap-4 justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-sky-400">Controle de Produção</p>
+              <h1 className="text-xl font-semibold">Relatórios de Execução</h1>
+              <p className="text-xs text-slate-400">{rangeLabel}</p>
             </div>
-            <div className="flex items-center gap-2">
-              {isAdmin ? (
-                <Link to="/admin" className="btn-secondary text-slate-200">
-                  Painel
-                </Link>
-              ) : (
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm font-medium">{user?.nome}</p>
+                <p className="text-xs text-slate-400">{user?.email}</p>
+              </div>
+              <div className="flex items-center gap-2">
                 <Link to="/operador" className="btn-secondary text-slate-200">
                   Painel
                 </Link>
-              )}
-              <button
-                onClick={logout}
-                className="px-4 py-2 rounded-xl border border-slate-700 hover:border-red-400 hover:text-red-300 transition text-sm"
-              >
-                Sair
-              </button>
+                <button
+                  onClick={logout}
+                  className="px-4 py-2 rounded-xl border border-slate-700 hover:border-red-400 hover:text-red-300 transition text-sm"
+                >
+                  Sair
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
         <section className="card space-y-4">

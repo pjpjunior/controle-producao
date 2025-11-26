@@ -52,6 +52,14 @@ model Servico {
   updatedAt   DateTime         @updatedAt
 }
 
+model ServicoCatalogo {
+  id          Int      @id @default(autoincrement())
+  nome        String   @unique
+  funcao      String
+  precoPadrao Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+}
+
 model ServicoExecucao {
   id           Int       @id @default(autoincrement())
   servico      Servico   @relation(fields: [servicoId], references: [id])
