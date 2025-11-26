@@ -6,7 +6,7 @@ import routes from './routes';
 const app = express();
 
 const devHosts = ['localhost', '127.0.0.1', '0.0.0.0', '192.168.15.5'];
-const devPorts = [5173, 8080];
+const devPorts = [8080];
 const devFallbackOrigins = new Set(devHosts.flatMap((host) => devPorts.map((port) => `http://${host}:${port}`)));
 
 const allowedOrigins = new Set([

@@ -40,7 +40,7 @@ docker compose up --build
 
 Serviços disponíveis:
 
-- Frontend: http://localhost:5173
+- Frontend: http://localhost:8080
 - Backend: http://localhost:3000 (rotas expostas sob `${API_PREFIX}`, padrão `/api`)
 - Postgres: localhost:5432 (credenciais em `.env`)
 
