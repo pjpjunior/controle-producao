@@ -11,7 +11,7 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [loginInput, setLoginInput] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ const LoginPage = () => {
     setError(null);
 
     try {
-      const user = await login(email, senha);
+      const user = await login(loginInput, senha);
       const destino = user.funcoes.includes('admin') ? '/admin' : '/operador';
       navigate(destino, { replace: true });
     } catch (err: any) {
@@ -61,13 +61,13 @@ const LoginPage = () => {
         </div>
         <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
           <div className="space-y-2">
-            <label className="text-sm text-slate-300">E-mail</label>
+            <label className="text-sm text-slate-300">Usuário ou e-mail</label>
             <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
+              type="text"
+              value={loginInput}
+              onChange={(event) => setLoginInput(event.target.value)}
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              placeholder="operador@empresa.com"
+              placeholder="Usuário ou e-mail"
               required
             />
           </div>
@@ -82,24 +82,24 @@ const LoginPage = () => {
               required
             />
           </div>
-        {error && (
-          <p className="text-sm text-red-400 bg-red-400/10 border border-red-500/30 rounded-xl px-4 py-2">{error}</p>
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 transition text-slate-950 font-semibold py-3 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {loading ? 'Entrando...' : 'Entrar'}
-        </button>
-        {seedStatus && !seedStatus.hasUsers && (
-          <p className="text-sm text-slate-400 text-center">
-            Sem usuários cadastrados.{' '}
-            <Link to="/primeiro-acesso" className="text-sky-300 hover:text-sky-200">
-              Criar primeiro administrador
-            </Link>
-          </p>
-        )}
+          {error && (
+            <p className="text-sm text-red-400 bg-red-400/10 border border-red-500/30 rounded-xl px-4 py-2">{error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 transition text-slate-950 font-semibold py-3 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Entrando...' : 'Entrar'}
+          </button>
+          {seedStatus && !seedStatus.hasUsers && (
+            <p className="text-sm text-slate-400 text-center">
+              Sem usuários cadastrados.{' '}
+              <Link to="/primeiro-acesso" className="text-sky-300 hover:text-sky-200">
+                Criar primeiro administrador
+              </Link>
+            </p>
+          )}
         </form>
       </div>
     </div>

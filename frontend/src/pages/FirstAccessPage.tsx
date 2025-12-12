@@ -106,10 +106,10 @@ const FirstAccessPage = () => {
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-2">
-              <label className="text-sm text-slate-300">Senha (mínimo 6 caracteres)</label>
+              <label className="text-sm text-slate-300">Senha (mínimo 3 caracteres)</label>
               <input
                 type="password"
-                minLength={6}
+                minLength={3}
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -120,7 +120,7 @@ const FirstAccessPage = () => {
               <label className="text-sm text-slate-300">Confirmar senha</label>
               <input
                 type="password"
-                minLength={6}
+                minLength={3}
                 value={confirmarSenha}
                 onChange={(e) => setConfirmarSenha(e.target.value)}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"

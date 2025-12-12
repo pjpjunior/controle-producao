@@ -1,7 +1,10 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../lib/api';
 import { Pedido } from '../types';
 import AdminNavBar from '../components/AdminNavBar';
+import { v4 as uuidv4 } from 'uuid';
+
+const safeId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : uuidv4());
 
 type ServicoCatalogo = {
   id: number;
@@ -21,25 +24,36 @@ type ServicoSelecionado = {
   precoUnitarioInput: string;
 };
 
-interface FuncaoDisponivel {
-  id: number;
-  nome: string;
-  createdAt: string;
-}
-
 const AdminDashboard = () => {
+  const criarLinhaVazia = () => ({
+    id: safeId(),
+    catalogoId: null as number | null,
+    nome: '',
+    funcao: '',
+    quantidade: 1,
+    precoUnitario: 0,
+    precoUnitarioInput: '0'
+  });
+
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [catalogo, setCatalogo] = useState<ServicoCatalogo[]>([]);
   const [catalogoLoading, setCatalogoLoading] = useState(true);
+  const [filteredCatalogo, setFilteredCatalogo] = useState<ServicoCatalogo[]>([]);
+  const [autocompleteIndex, setAutocompleteIndex] = useState<number | null>(null);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
+  const suggestionRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const [editingServicoId, setEditingServicoId] = useState<number | null>(null);
+  const [editingPedidoId, setEditingPedidoId] = useState<number | null>(null);
+  const [editingForm, setEditingForm] = useState({ descricao: '', quantidade: '', preco: '' });
+  const [editingLoading, setEditingLoading] = useState(false);
 
   const [novoPedidoForm, setNovoPedidoForm] = useState({
     numeroPedido: '',
     cliente: '',
-    servicos: [] as ServicoSelecionado[]
+    servicos: [criarLinhaVazia()] as ServicoSelecionado[]
   });
-  const servicoIdCounter = useRef(0);
 
   const parseQuantidadeInput = (valor: string) => {
     const cleaned = valor.replace(/\D/g, '');
@@ -55,6 +69,16 @@ const AdminDashboard = () => {
     const parsed = Number(final);
     return Number.isFinite(parsed) ? parsed : 0;
   };
+
+  const createServicoSelecionado = (servico: ServicoCatalogo): ServicoSelecionado => ({
+    id: safeId(),
+    catalogoId: servico.id,
+    nome: servico.nome,
+    funcao: servico.funcao,
+    quantidade: 1,
+    precoUnitario: servico.precoPadrao,
+    precoUnitarioInput: servico.precoPadrao.toFixed(2).replace('.', ',')
+  });
 
   const showFeedback = useCallback((type: 'success' | 'error', message: string) => {
     setFeedback({ type, message });
@@ -95,18 +119,136 @@ const AdminDashboard = () => {
     fetchCatalogo();
   }, [fetchCatalogo]);
 
-  const createServicoSelecionado = useCallback(
-    (item: ServicoCatalogo | null): ServicoSelecionado => ({
-      id: `serv-${Date.now()}-${servicoIdCounter.current++}`,
-      catalogoId: item?.id ?? null,
-      nome: item?.nome ?? '',
-      funcao: item?.funcao ?? '',
-      quantidade: 1,
-      precoUnitario: item?.precoPadrao ?? 0,
-      precoUnitarioInput: item ? item.precoPadrao.toFixed(2).replace('.', ',') : ''
-    }),
-    [servicoIdCounter]
-  );
+  const handleServicoNomeChange = (index: number, value: string) => {
+    setNovoPedidoForm((prev) => {
+      const novo = [...prev.servicos];
+      if (!novo[index]) return prev;
+      novo[index] = { ...novo[index], nome: value };
+      return { ...prev, servicos: novo };
+    });
+
+    if (value.length >= 2) {
+      const resultados = catalogo.filter((s) => s.nome.toLowerCase().includes(value.toLowerCase()));
+      setFilteredCatalogo(resultados);
+      suggestionRefs.current = {};
+      setAutocompleteIndex(index);
+      setSelectedSuggestionIndex(resultados.length > 0 ? 0 : -1);
+    } else {
+      setFilteredCatalogo([]);
+      setAutocompleteIndex(null);
+      setSelectedSuggestionIndex(-1);
+      suggestionRefs.current = {};
+    }
+  };
+
+  const handleSelectSugestao = (index: number, servico: ServicoCatalogo) => {
+    setNovoPedidoForm((prev) => {
+      const novo = [...prev.servicos];
+      if (!novo[index]) return prev;
+      const quantidadeAtual = novo[index].quantidade && novo[index].quantidade > 0 ? novo[index].quantidade : 1;
+      novo[index] = {
+        ...novo[index],
+        catalogoId: servico.id,
+        nome: servico.nome,
+        funcao: servico.funcao,
+        quantidade: quantidadeAtual,
+        precoUnitario: servico.precoPadrao,
+        precoUnitarioInput: servico.precoPadrao.toFixed(2).replace('.', ',')
+      };
+      return { ...prev, servicos: novo };
+    });
+    setAutocompleteIndex(null);
+    setFilteredCatalogo([]);
+    setSelectedSuggestionIndex(-1);
+    suggestionRefs.current = {};
+  };
+
+  const handleQuantidadeChange = (index: number, value: string) => {
+    setNovoPedidoForm((prev) => {
+      const novo = [...prev.servicos];
+      if (!novo[index]) return prev;
+      novo[index] = { ...novo[index], quantidade: parseQuantidadeInput(value) };
+      return { ...prev, servicos: novo };
+    });
+  };
+
+  const handleAutocompleteKeyDown = (event: KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (autocompleteIndex !== index || filteredCatalogo.length === 0) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedSuggestionIndex((prev) => (prev + 1) % filteredCatalogo.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedSuggestionIndex((prev) =>
+        prev <= 0 ? filteredCatalogo.length - 1 : prev - 1
+      );
+    } else if (event.key === 'Enter' && selectedSuggestionIndex >= 0) {
+      event.preventDefault();
+      const servicoSelecionado = filteredCatalogo[selectedSuggestionIndex];
+      if (servicoSelecionado) {
+        handleSelectSugestao(index, servicoSelecionado);
+      }
+    } else if (event.key === 'Escape') {
+      setAutocompleteIndex(null);
+      setFilteredCatalogo([]);
+      setSelectedSuggestionIndex(-1);
+      suggestionRefs.current = {};
+    }
+  };
+
+  const handleServicoNomeKeyDown = (event: KeyboardEvent<HTMLInputElement>, index: number) => {
+    handleAutocompleteKeyDown(event, index);
+    if (event.defaultPrevented) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      adicionarLinha();
+    }
+  };
+
+  useEffect(() => {
+    if (selectedSuggestionIndex >= 0) {
+      suggestionRefs.current[selectedSuggestionIndex]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selectedSuggestionIndex, filteredCatalogo.length, autocompleteIndex]);
+
+  const handlePrecoChange = (index: number, value: string) => {
+    setNovoPedidoForm((prev) => {
+      const novo = [...prev.servicos];
+      if (!novo[index]) return prev;
+      novo[index] = {
+        ...novo[index],
+        precoUnitarioInput: value,
+        precoUnitario: parsePrecoInput(value)
+      };
+      return { ...prev, servicos: novo };
+    });
+  };
+
+  const adicionarLinha = () => {
+    setNovoPedidoForm((prev) => ({
+      ...prev,
+      servicos: [
+        ...prev.servicos,
+        {
+          id: safeId(),
+          catalogoId: null,
+          nome: '',
+          funcao: '',
+          quantidade: 1,
+          precoUnitario: 0,
+          precoUnitarioInput: '0'
+        }
+      ]
+    }));
+  };
+
+  const removerLinha = (index: number) => {
+    setNovoPedidoForm((prev) => ({
+      ...prev,
+      servicos: prev.servicos.filter((_, i) => i !== index)
+    }));
+  };
 
   const handleAddServico = () => {
     const first = catalogo[0] ?? null;
@@ -122,25 +264,8 @@ const AdminDashboard = () => {
     }));
   };
 
-  const handleUpdateServico = (id: string, changes: Partial<ServicoSelecionado>) => {
-    setNovoPedidoForm((prev) => ({
-      ...prev,
-      servicos: prev.servicos.map((servico) => (servico.id === id ? { ...servico, ...changes } : servico))
-    }));
-  };
-
-  const handleRemoveServico = (id: string) => {
-    setNovoPedidoForm((prev) => ({
-      ...prev,
-      servicos: prev.servicos.filter((servico) => servico.id !== id)
-    }));
-  };
-
   const handleCreatePedido = async (event: FormEvent) => {
     event.preventDefault();
-    if (serviceOptions.length === 0) {
-      return showFeedback('error', 'Cadastre funções de serviço antes de criar pedidos.');
-    }
     const servicosValidos = novoPedidoForm.servicos.filter(
       (servico) => servico.quantidade && servico.quantidade > 0 && servico.funcao
     );
@@ -158,6 +283,7 @@ const AdminDashboard = () => {
       try {
         for (const servico of servicosValidos) {
           await api.post(`/pedidos/${pedido.id}/servicos`, {
+            catalogoId: servico.catalogoId ?? undefined,
             tipoServico: servico.funcao,
             quantidade: servico.quantidade,
             precoUnitario: servico.precoUnitario ?? 0,
@@ -174,8 +300,11 @@ const AdminDashboard = () => {
         );
       }
 
-      setNovoPedidoForm({ numeroPedido: '', cliente: '', servicos: [] });
-      setNovoServicoSelecionado(serviceOptions[0] ?? '');
+      setNovoPedidoForm({
+        numeroPedido: '',
+        cliente: '',
+        servicos: [criarLinhaVazia()]
+      });
       fetchPedidos();
     } catch (error: any) {
       console.error(error);
@@ -197,6 +326,57 @@ const AdminDashboard = () => {
       console.error(error);
       showFeedback('error', error?.response?.data?.message ?? 'Erro ao remover serviço');
     }
+  };
+
+  const startEditingServico = (
+    pedidoId: number,
+    servicoId: number,
+    servicoDescricao: string,
+    quantidade: number,
+    preco: number
+  ) => {
+    setEditingPedidoId(pedidoId);
+    setEditingServicoId(servicoId);
+    setEditingForm({
+      descricao: servicoDescricao,
+      quantidade: String(quantidade),
+      preco: preco.toFixed(2).replace('.', ',')
+    });
+  };
+
+  const submitServicoEdicao = async () => {
+    if (!editingPedidoId || !editingServicoId) return;
+    const quantidadeNumber = parseQuantidadeInput(editingForm.quantidade);
+    const precoNumber = parsePrecoInput(editingForm.preco);
+    if (quantidadeNumber <= 0) {
+      showFeedback('error', 'Quantidade deve ser maior que zero');
+      return;
+    }
+
+    setEditingLoading(true);
+    try {
+      await api.patch(`/pedidos/${editingPedidoId}/servicos/${editingServicoId}`, {
+        observacoes: editingForm.descricao.trim(),
+        quantidade: quantidadeNumber,
+        precoUnitario: precoNumber
+      });
+      showFeedback('success', 'Serviço atualizado');
+      setEditingServicoId(null);
+      setEditingPedidoId(null);
+      setEditingForm({ descricao: '', quantidade: '', preco: '' });
+      fetchPedidos();
+    } catch (error: any) {
+      console.error(error);
+      showFeedback('error', error?.response?.data?.message ?? 'Erro ao editar serviço');
+    } finally {
+      setEditingLoading(false);
+    }
+  };
+
+  const cancelServicoEdicao = () => {
+    setEditingServicoId(null);
+    setEditingPedidoId(null);
+    setEditingForm({ descricao: '', quantidade: '', preco: '' });
   };
 
   const handleDeletePedido = async (pedidoId: number, numeroPedido: string) => {
@@ -257,6 +437,11 @@ const AdminDashboard = () => {
                 value={novoPedidoForm.numeroPedido}
                 onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, numeroPedido: e.target.value })}
                 className="input"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                  }
+                }}
                 required
               />
               <input
@@ -264,6 +449,11 @@ const AdminDashboard = () => {
                 value={novoPedidoForm.cliente}
                 onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, cliente: e.target.value })}
                 className="input"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                  }
+                }}
                 required
               />
               <button type="submit" className="btn-primary w-full md:w-auto">
@@ -271,17 +461,7 @@ const AdminDashboard = () => {
               </button>
             </div>
 
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-sm text-slate-400">Planilha de serviços</p>
-              <button
-                type="button"
-                onClick={handleAddServico}
-                disabled={catalogo.length === 0}
-                className="btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                + Adicionar linha
-              </button>
-            </div>
+            <p className="text-sm text-slate-400">Planilha de serviços (busque pelo nome para preencher função e preço)</p>
 
             {catalogoLoading ? (
               <div className="grid md:grid-cols-2 gap-3">
@@ -294,98 +474,105 @@ const AdminDashboard = () => {
                 Cadastre itens no catálogo de serviços para liberar as linhas de pedido.
               </p>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950/40">
-                <table className="min-w-full text-sm text-slate-200">
-                  <thead className="bg-slate-900/60 text-left uppercase text-xs tracking-wide text-slate-400">
-                    <tr>
-                      <th className="px-3 py-2">Serviço</th>
-                      <th className="px-3 py-2 w-32">Qtd.</th>
-                      <th className="px-3 py-2 w-32">Preço</th>
-                      <th className="px-3 py-2 w-24 text-right">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {novoPedidoForm.servicos.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-3 py-4 text-sm text-slate-500 text-center">
-                          Nenhum serviço na planilha. Clique em Salvar para inserir uma linha e depois ajuste serviço,
-                          quantidade e preço.
-                        </td>
-                      </tr>
-                    ) : (
-                      novoPedidoForm.servicos.map((servico) => {
-                        return (
-                          <tr key={servico.id} className="border-t border-slate-800">
-                            <td className="px-3 py-2">
-                              <select
-                                value={servico.catalogoId ?? ''}
-                                onChange={(e) => {
-                                  const novoId = Number(e.target.value);
-                                  const item = catalogo.find((c) => c.id === novoId) ?? null;
-                                  handleUpdateServico(servico.id, {
-                                    catalogoId: item?.id ?? null,
-                                    nome: item?.nome ?? '',
-                                    funcao: item?.funcao ?? '',
-                                    precoUnitario: item?.precoPadrao ?? servico.precoUnitario,
-                                    precoUnitarioInput: item ? item.precoPadrao.toFixed(2).replace('.', ',') : servico.precoUnitarioInput
-                                  });
-                                }}
-                                className="input w-full uppercase"
-                              >
-                                <option value="" disabled>
-                                  Selecione
-                                </option>
-                                {catalogo.map((item) => (
-                                  <option key={`${servico.id}-${item.id}`} value={item.id}>
-                                    {item.nome}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                value={servico.quantidade === 0 ? '' : String(servico.quantidade)}
-                                onChange={(e) =>
-                                  handleUpdateServico(servico.id, { quantidade: parseQuantidadeInput(e.target.value) })
-                                }
-                                className="input text-right"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={servico.precoUnitarioInput}
-                                placeholder="0,00"
-                                onChange={(e) => {
-                                  const texto = e.target.value;
-                                  handleUpdateServico(servico.id, {
-                                    precoUnitario: parsePrecoInput(texto),
-                                    precoUnitarioInput: texto
-                                  });
-                                }}
-                                className="input text-right"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveServico(servico.id)}
-                                className="text-xs text-red-300 hover:text-red-200"
-                              >
-                                Remover
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+              <div className="border border-slate-800 rounded-md mt-6 overflow-hidden bg-slate-900">
+                <div className="grid grid-cols-[2fr_1fr_1fr_auto] font-semibold p-3 border-b border-slate-800 bg-slate-800/60 text-slate-100">
+                  <div>Serviço</div>
+                  <div className="text-right">Quantidade</div>
+                  <div className="text-right">Preço</div>
+                  <div className="text-center">Excluir</div>
+                </div>
 
-                  </tbody>
-                </table>
+                {novoPedidoForm.servicos.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="grid grid-cols-[2fr_1fr_1fr_auto] gap-3 items-center py-3 px-2 border-b border-slate-800 bg-slate-900 text-slate-100"
+                  >
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={item.nome}
+                        onChange={(e) => handleServicoNomeChange(index, e.target.value)}
+                        onKeyDown={(e) => handleServicoNomeKeyDown(e, index)}
+                        placeholder="Serviço"
+                        className="border border-slate-700 rounded p-2 w-full bg-slate-950 text-slate-100"
+                      />
+
+                    {autocompleteIndex === index && filteredCatalogo.length > 0 && (
+                        <div className="absolute bg-slate-900 shadow-md rounded mt-1 w-full z-50 border border-slate-700 max-h-64 overflow-auto">
+                          {filteredCatalogo.map((s, suggestionIndex) => {
+                            const isSelected = selectedSuggestionIndex === suggestionIndex;
+                            return (
+                              <div
+                                key={s.id}
+                                ref={(el) => {
+                                  suggestionRefs.current[suggestionIndex] = el;
+                                }}
+                                className={`p-2 cursor-pointer text-sm ${
+                                  isSelected ? 'bg-slate-800' : 'hover:bg-slate-800/70'
+                                }`}
+                                onClick={() => handleSelectSugestao(index, s)}
+                              >
+                                {s.nome} — {s.funcao} —{' '}
+                                {Number(s.precoPadrao ?? 0).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL'
+                                })}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={item.quantidade}
+                      onChange={(e) => handleQuantidadeChange(index, e.target.value)}
+                      className="border border-slate-700 rounded p-2 w-full text-right bg-slate-950 text-slate-100"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          adicionarLinha();
+                        }
+                      }}
+                    />
+
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.precoUnitarioInput}
+                      onChange={(e) => handlePrecoChange(index, e.target.value)}
+                      className="border border-slate-700 rounded p-2 w-full text-right bg-slate-950 text-slate-100"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          adicionarLinha();
+                        }
+                      }}
+                    />
+
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={() => removerLinha(index)}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={adicionarLinha}
+                  disabled={catalogo.length === 0}
+                  className="text-green-600 hover:text-green-800 p-3 flex items-center gap-1 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  + Adicionar linha
+                </button>
               </div>
             )}
           </form>
@@ -449,23 +636,86 @@ const AdminDashboard = () => {
                     {pedido.servicos.map((servico) => {
                       const precoUnitario = Number(servico.precoUnitario ?? 0);
                       const valorTotal = precoUnitario * servico.quantidade;
+                      const descricao = (servico.observacoes ?? servico.catalogoNome ?? '').trim();
+                      const isEditing = editingServicoId === servico.id && editingPedidoId === pedido.id;
                       return (
                         <div
                           key={servico.id}
                           className="border border-slate-800 rounded-2xl p-3 bg-slate-950/40 text-sm text-slate-300"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold uppercase text-white">{servico.tipoServico}</span>
-                            <span className="font-semibold text-white">
-                              {valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                            </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-white">
+                                {descricao && descricao.length > 0 ? descricao : servico.tipoServico}
+                              </span>
+                              <span className="text-[11px] uppercase text-slate-400 tracking-wide">
+                                {servico.tipoServico}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white">
+                                {valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </span>
+                              <button
+                                type="button"
+                                className="text-slate-300 hover:text-white border border-slate-700 rounded-lg px-2 py-1 text-xs"
+                                onClick={() => startEditingServico(pedido.id, servico.id, descricao, servico.quantidade, precoUnitario)}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                type="button"
+                                className="text-red-300 hover:text-red-200 border border-red-500/60 rounded-lg px-2 py-1 text-xs"
+                                onClick={() => handleDeleteServico(pedido.id, servico.id, servico.tipoServico)}
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </div>
-                          <div className="text-xs text-slate-400 mt-1">
-                            Qtde: <span className="text-white font-semibold">{servico.quantidade}</span> · Preço unit.:{' '}
-                            <span className="text-white font-semibold">
-                              {precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                            </span>
-                          </div>
+                          {isEditing ? (
+                            <div className="mt-2 space-y-2">
+                              <input
+                                className="input text-sm"
+                                value={editingForm.descricao}
+                                onChange={(e) => setEditingForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                                placeholder="Descrição"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  className="input text-sm"
+                                  value={editingForm.quantidade}
+                                  onChange={(e) => setEditingForm((prev) => ({ ...prev, quantidade: e.target.value }))}
+                                  placeholder="Quantidade"
+                                />
+                                <input
+                                  className="input text-sm"
+                                  value={editingForm.preco}
+                                  onChange={(e) => setEditingForm((prev) => ({ ...prev, preco: e.target.value }))}
+                                  placeholder="Preço"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={submitServicoEdicao}
+                                  disabled={editingLoading}
+                                  className="btn-primary text-xs"
+                                >
+                                  {editingLoading ? 'Salvando...' : 'Salvar'}
+                                </button>
+                                <button type="button" onClick={cancelServicoEdicao} className="btn-secondary text-xs">
+                                  Cancelar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-slate-400 mt-1">
+                              Qtde: <span className="text-white font-semibold">{servico.quantidade}</span> · Preço unit.:{' '}
+                              <span className="text-white font-semibold">
+                                {precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

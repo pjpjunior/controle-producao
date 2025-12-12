@@ -31,6 +31,7 @@ Consulte o arquivo [AGENTS.md](./AGENTS.md) para orientações sobre estrutura d
    - `DATABASE_URL` deve apontar para o Postgres definido no `docker-compose`.
    - `JWT_SECRET` deve ser uma chave segura.
    - `FRONTEND_URL` pode receber múltiplas URLs separadas por vírgula.
+   - `VITE_API_PROXY_TARGET` define para onde o Vite redireciona chamadas a `/api` em desenvolvimento. Fora do Docker use `http://localhost:3000`; no Compose já apontamos para `http://backend:3000`.
 
 ## Executando com Docker
 
@@ -40,7 +41,7 @@ docker compose up --build
 
 Serviços disponíveis:
 
-- Frontend: http://localhost:8080
+- Frontend: http://localhost:5000
 - Backend: http://localhost:3000 (rotas expostas sob `${API_PREFIX}`, padrão `/api`)
 - Postgres: localhost:5432 (credenciais em `.env`)
 

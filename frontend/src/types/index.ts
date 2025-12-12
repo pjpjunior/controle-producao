@@ -26,6 +26,9 @@ export interface ServicoExecucao {
 export interface Servico {
   id: number;
   pedidoId: number;
+  catalogoId?: number | null;
+  catalogoNome?: string | null;
+  catalogoFuncao?: string | null;
   tipoServico: string;
   quantidade: number;
   precoUnitario?: number;
@@ -58,6 +61,8 @@ export interface RelatorioExecucao {
   horaFim: string | null;
   observacoes?: string | null;
   motivoPausa?: string | null;
+  catalogoId?: number | null;
+  catalogoNome?: string | null;
 }
 
 export interface RelatorioServicoResumo {

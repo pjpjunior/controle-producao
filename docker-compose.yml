@@ -4,19 +4,21 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5000"]
     ports:
-      - "8080:8080"
+      - "5000:5000"
     env_file:
       - .env
     environment:
       VITE_API_URL: ${VITE_API_URL:-/api}
+      VITE_API_PROXY_TARGET: http://backend:3000
     depends_on:
       - backend
     volumes:
       - ./frontend:/app
       - /app/node_modules
     networks:
+      - public_net
       - internal_net
 
   backend:
@@ -25,6 +27,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: ["npm", "run", "dev"]
+    expose:
+      - "3000"
     env_file:
       - .env
     environment:
@@ -74,5 +78,8 @@ services:
           - postgres
 
 networks:
+  public_net:
+    driver: bridge
   internal_net:
     driver: bridge
+    internal: true

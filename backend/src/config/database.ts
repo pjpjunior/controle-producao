@@ -3,7 +3,9 @@ import prisma from './prisma';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const ensureAdminRole = async () => {
+const ensureFuncoesSeed = async () => {
+  // Mantém apenas a função admin para liberar criação do primeiro usuário;
+  // outras funções e catálogo serão criados manualmente via aplicação.
   await prisma.funcao.upsert({
     where: { nome: 'admin' },
     update: {},
@@ -25,7 +27,7 @@ export const ensureDatabase = async (retries = 5, intervalMs = 3000) => {
       if (attempt > 1) {
         console.log('[DB] Conexão restabelecida com sucesso.');
       }
-      await ensureAdminRole();
+      await ensureFuncoesSeed();
       await logFirstAccessWarning();
       return;
     } catch (error: any) {

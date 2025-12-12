@@ -14,7 +14,8 @@ const servicoInclude = {
         select: { id: true, nome: true, funcoes: true }
       }
     }
-  }
+  },
+  catalogo: { select: { id: true, nome: true, funcao: true } }
 };
 
 const mapServicoExecResponse = (
@@ -23,6 +24,9 @@ const mapServicoExecResponse = (
 ) => ({
   id: servico.id,
   pedidoId: servico.pedidoId,
+  catalogoId: servico.catalogoId ?? null,
+  catalogoNome: servico.catalogo?.nome ?? null,
+  catalogoFuncao: servico.catalogo?.funcao ?? null,
   tipoServico: servico.tipoServico,
   quantidade: servico.quantidade,
   observacoes: servico.observacoes,
@@ -379,6 +383,8 @@ router.get('/relatorios', async (req, res) => {
             quantidade: true,
             precoUnitario: true,
             observacoes: true,
+            catalogoId: true,
+            catalogo: { select: { nome: true } },
             pedidoId: true,
             pedido: {
               select: {
@@ -424,6 +430,8 @@ router.get('/relatorios', async (req, res) => {
           horaFim: Date | null;
           motivoPausa?: string | null;
           observacoes?: string | null;
+          catalogoId?: number | null;
+          catalogoNome?: string | null;
         }>;
       }
     >();
@@ -476,7 +484,9 @@ router.get('/relatorios', async (req, res) => {
       horaInicio: execucao.horaInicio,
       horaFim: execucao.horaFim,
       motivoPausa: execucao.motivoPausa,
-      observacoes: execucao.servico.observacoes
+      observacoes: execucao.servico.observacoes,
+      catalogoId: execucao.servico.catalogoId,
+      catalogoNome: execucao.servico.catalogo?.nome ?? null
     });
   });
 

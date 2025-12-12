@@ -6,7 +6,7 @@ interface AuthContextData {
   user: Usuario | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, senha: string) => Promise<Usuario>;
+  login: (loginInput: string, senha: string) => Promise<Usuario>;
   logout: () => void;
   refreshUser: () => Promise<Usuario | null>;
 }
@@ -68,8 +68,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, senha: string) => {
-    const { data } = await api.post<{ token: string; user: Usuario }>('/auth/login', { email, senha });
+  const login = useCallback(async (loginInput: string, senha: string) => {
+    const { data } = await api.post<{ token: string; user: Usuario }>('/auth/login', { login: loginInput, senha });
     const normalizedUser = normalizeUsuario(data.user);
 
     setToken(data.token);

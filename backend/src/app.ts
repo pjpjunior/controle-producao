@@ -5,14 +5,33 @@ import routes from './routes';
 
 const app = express();
 
-const devHosts = ['localhost', '127.0.0.1', '0.0.0.0', '192.168.15.5'];
-const devPorts = [8080];
-const devFallbackOrigins = new Set(devHosts.flatMap((host) => devPorts.map((port) => `http://${host}:${port}`)));
+const isDev = env.nodeEnv !== 'production';
 
-const allowedOrigins = new Set([
-  ...env.frontendUrls,
-  ...(env.nodeEnv === 'production' ? [] : Array.from(devFallbackOrigins))
-]);
+const normalizeOrigin = (value: string) => {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.hostname}${url.port ? `:${url.port}` : ''}`;
+  } catch {
+    return value.trim();
+  }
+};
+
+const isPrivateHostname = (hostname: string) =>
+  ['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(hostname) ||
+  hostname.startsWith('10.') ||
+  hostname.startsWith('192.168.') ||
+  /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+
+const isPrivateNetworkOrigin = (origin: string) => {
+  try {
+    const { hostname } = new URL(origin);
+    return isPrivateHostname(hostname);
+  } catch {
+    return false;
+  }
+};
+
+const allowedOrigins = new Set(env.frontendUrls.map(normalizeOrigin));
 
 app.use(
   cors({
@@ -21,7 +40,12 @@ app.use(
         return callback(null, true);
       }
 
-      if (allowedOrigins.has(origin) || env.frontendUrls.includes('*')) {
+      if (
+        isDev ||
+        allowedOrigins.has(normalizeOrigin(origin)) ||
+        env.frontendUrls.includes('*') ||
+        isPrivateNetworkOrigin(origin)
+      ) {
         return callback(null, true);
       }
 

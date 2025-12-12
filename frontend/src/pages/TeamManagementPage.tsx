@@ -1,6 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../lib/api';
-import { useAuth } from '../context/AuthContext';
 import { FuncaoUsuario, Usuario } from '../types';
 import AdminNavBar from '../components/AdminNavBar';
 
@@ -16,7 +15,6 @@ interface FuncaoDisponivel {
 }
 
 const TeamManagementPage = () => {
-  const { user } = useAuth();
   const [usuarios, setUsuarios] = useState<UsuarioDetalhado[]>([]);
   const [funcoesDisponiveis, setFuncoesDisponiveis] = useState<FuncaoDisponivel[]>([]);
   const [funcoesLoading, setFuncoesLoading] = useState(true);
@@ -319,10 +317,11 @@ const TeamManagementPage = () => {
               />
               <input
                 type="password"
-                placeholder="Senha"
+                placeholder="Senha (mínimo 3 caracteres)"
                 value={userForm.senha}
                 onChange={(e) => setUserForm({ ...userForm, senha: e.target.value })}
                 className="input"
+                minLength={3}
                 required
               />
               <div>

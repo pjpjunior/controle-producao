@@ -578,7 +578,7 @@ const ReportsPage = () => {
                             <thead>
                               <tr className="text-xs uppercase text-slate-400 border-b border-slate-800">
                                 <th className="py-2 pr-4">Pedido</th>
-                                <th className="py-2 pr-4">Serviço</th>
+                                <th className="py-2 pr-4">Operador</th>
                                 <th className="py-2 pr-4">Quantidade</th>
                                 <th className="py-2 pr-4">Observações</th>
                                 {isAdmin && <th className="py-2 pr-4">Preço unit.</th>}
@@ -602,7 +602,7 @@ const ReportsPage = () => {
                                     </div>
                                     <div className="text-xs text-slate-500">{execucao.cliente}</div>
                                   </td>
-                                  <td className="py-2 pr-4 uppercase text-slate-300">{execucao.tipoServico}</td>
+                                  <td className="py-2 pr-4 text-slate-300 font-semibold">{operador.nome}</td>
                                   <td className="py-2 pr-4 text-slate-300">{execucao.quantidade}</td>
                                   <td className="py-2 pr-4 text-slate-300 max-w-xs whitespace-pre-wrap break-words">
                                     {execucao.observacoes?.trim() || '—'}

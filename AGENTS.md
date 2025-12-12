@@ -4,7 +4,7 @@
 O backend fica em `backend/`: `src/app.ts` monta o app Express, `src/server.ts` controla o bootstrap e as pastas `config/`, `middlewares/` e `routes/` separam carregamento de env, guardas e controladores HTTP. Esquemas e migrações residem em `backend/prisma/`; atualize `schema.prisma` e rode `npm run prisma:generate` antes de enviar alterações. O frontend está em `frontend/src`, onde `pages/` trazem Login/Admin/Operador, `components/` concentra peças reutilizáveis como `StatusBadge`, `context/AuthContext.tsx` mantém o estado autenticado e `lib/api.ts` encapsula o Axios com JWT. O `docker-compose.yml` sobe todos os serviços, enquanto `pgdata/` guarda o volume do Postgres e pode ser limpo quando precisar reiniciar o banco local.
 
 ## Comandos de Build, Teste e Desenvolvimento
-- `docker compose up --build`: compila as imagens, dispara as migrações Prisma via serviço `migrations` e publica frontend (8080), backend (3000) e banco (5432).
+- `docker compose up --build`: compila as imagens, dispara as migrações Prisma via serviço `migrations` e publica frontend (5000), backend (3000) e banco (5432).
 - `cd backend && npm run dev`: executa a API com `ts-node-dev`; combine `npm run build && npm run start` para testar o bundle, e sempre aplique mudanças de schema com `npm run prisma:migrate-dev`.
 - `cd frontend && npm run dev`: inicia o Vite com hot reload; use `npm run build && npm run preview` para validar o pacote estático antes de publicar.
 

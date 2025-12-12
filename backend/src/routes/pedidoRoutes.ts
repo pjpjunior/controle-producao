@@ -11,6 +11,7 @@ const pedidoInclude = {
   servicos: {
     orderBy: { id: 'asc' as const },
     include: {
+      catalogo: { select: { id: true, nome: true, funcao: true } },
       execucoes: {
         orderBy: { horaInicio: 'desc' as const },
         include: {
@@ -36,6 +37,9 @@ const mapServicoResponse = (
 ) => ({
   id: servico.id,
   pedidoId: servico.pedidoId,
+  catalogoId: servico.catalogoId ?? null,
+  catalogoNome: servico.catalogo?.nome ?? null,
+  catalogoFuncao: servico.catalogo?.funcao ?? null,
   tipoServico: servico.tipoServico,
   quantidade: servico.quantidade,
   observacoes: servico.observacoes,
@@ -171,11 +175,28 @@ router.get('/:numeroPedido', async (req, res) => {
 });
 
 const createServicoSchema = z.object({
-  tipoServico: z.string().min(3, 'Tipo de serviço obrigatório'),
+  catalogoId: z.number().int().positive().optional(),
+  tipoServico: z.string().trim().min(3, 'Tipo de serviço obrigatório').optional(),
   quantidade: z.coerce.number().int().positive('Quantidade deve ser maior que zero'),
   precoUnitario: z.coerce.number().min(0).default(0),
   observacoes: z.string().optional()
+}).refine((data) => Boolean(data.catalogoId || data.tipoServico), {
+  message: 'Informe o serviço do catálogo ou um tipo de serviço',
+  path: ['tipoServico']
 });
+
+const updateServicoSchema = z
+  .object({
+    catalogoId: z.number().int().positive().optional(),
+    tipoServico: z.string().trim().min(3).optional(),
+    quantidade: z.coerce.number().int().positive().optional(),
+    precoUnitario: z.coerce.number().min(0).optional(),
+    observacoes: z.string().optional()
+  })
+  .refine((data) => Boolean(data.catalogoId || data.tipoServico || data.quantidade || data.precoUnitario || data.observacoes), {
+    message: 'Envie ao menos um campo para atualizar o serviço',
+    path: ['tipoServico']
+  });
 
 router.post('/:id/servicos', adminOnly, async (req, res) => {
   const pedidoId = Number(req.params.id);
@@ -187,18 +208,38 @@ router.post('/:id/servicos', adminOnly, async (req, res) => {
     await prisma.pedido.findUniqueOrThrow({ where: { id: pedidoId } });
 
     const data = createServicoSchema.parse(req.body);
+    const precoInformado = req.body?.precoUnitario;
+
+    let tipoServico = data.tipoServico?.trim().toLowerCase() ?? '';
+    let observacoes = data.observacoes?.trim() || null;
+    let precoUnitario = data.precoUnitario ?? 0;
+
+    if (data.catalogoId) {
+      const catalogo = await prisma.servicoCatalogo.findUnique({ where: { id: data.catalogoId } });
+      if (!catalogo) {
+        return res.status(404).json({ message: 'Serviço de catálogo não encontrado' });
+      }
+      tipoServico = catalogo.funcao;
+      observacoes = observacoes || catalogo.nome;
+      if (typeof precoInformado === 'undefined') {
+        precoUnitario = Number(catalogo.precoPadrao ?? 0);
+      }
+    }
 
     const servico = await prisma.servico.create({
       data: {
         pedidoId,
-        tipoServico: data.tipoServico.toLowerCase(),
+        catalogoId: data.catalogoId,
+        tipoServico,
         quantidade: data.quantidade,
-        precoUnitario: data.precoUnitario ?? 0,
-        observacoes: data.observacoes ?? null
-      }
+        precoUnitario,
+        observacoes
+      },
+      include: pedidoInclude.servicos.include
     });
 
-    res.status(201).json(servico);
+    const isAdmin = req.user?.funcoes.includes('admin') ?? false;
+    res.status(201).json(mapServicoResponse(servico, isAdmin));
   } catch (error: any) {
     console.error('Erro ao criar serviço', error);
     if (error instanceof z.ZodError) {
@@ -208,6 +249,65 @@ router.post('/:id/servicos', adminOnly, async (req, res) => {
       return res.status(404).json({ message: 'Pedido não encontrado' });
     }
     res.status(500).json({ message: 'Não foi possível criar o serviço' });
+  }
+});
+
+router.patch('/:pedidoId/servicos/:servicoId', adminOnly, async (req, res) => {
+  const pedidoId = Number(req.params.pedidoId);
+  const servicoId = Number(req.params.servicoId);
+  if (Number.isNaN(pedidoId) || Number.isNaN(servicoId)) {
+    return res.status(400).json({ message: 'ID inválido' });
+  }
+
+  try {
+    const servico = await prisma.servico.findFirst({ where: { id: servicoId, pedidoId } });
+    if (!servico) {
+      return res.status(404).json({ message: 'Serviço não encontrado' });
+    }
+
+    const parsed = updateServicoSchema.parse(req.body);
+    const precoInformado = req.body?.precoUnitario;
+
+    let tipoServico = parsed.tipoServico?.trim().toLowerCase() ?? servico.tipoServico;
+    let observacoes = typeof parsed.observacoes === 'string' ? parsed.observacoes.trim() : servico.observacoes;
+    let precoUnitario = typeof parsed.precoUnitario === 'number' ? parsed.precoUnitario : Number(servico.precoUnitario ?? 0);
+    let catalogoId = parsed.catalogoId ?? servico.catalogoId ?? null;
+
+    if (parsed.catalogoId) {
+      const catalogo = await prisma.servicoCatalogo.findUnique({ where: { id: parsed.catalogoId } });
+      if (!catalogo) {
+        return res.status(404).json({ message: 'Serviço de catálogo não encontrado' });
+      }
+      tipoServico = catalogo.funcao;
+      if (typeof parsed.observacoes === 'undefined') {
+        observacoes = catalogo.nome;
+      }
+      if (typeof precoInformado === 'undefined') {
+        precoUnitario = Number(catalogo.precoPadrao ?? 0);
+      }
+      catalogoId = catalogo.id;
+    }
+
+    const updated = await prisma.servico.update({
+      where: { id: servicoId },
+      data: {
+        catalogoId,
+        tipoServico,
+        quantidade: parsed.quantidade ?? servico.quantidade,
+        precoUnitario,
+        observacoes
+      },
+      include: pedidoInclude.servicos.include
+    });
+
+    const isAdmin = req.user?.funcoes.includes('admin') ?? false;
+    res.json(mapServicoResponse(updated, isAdmin));
+  } catch (error: any) {
+    console.error('Erro ao atualizar serviço', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ message: 'Dados inválidos', errors: error.flatten() });
+    }
+    res.status(500).json({ message: 'Não foi possível atualizar o serviço' });
   }
 });
 

@@ -42,6 +42,8 @@ model Servico {
   id          Int              @id @default(autoincrement())
   pedido      Pedido           @relation(fields: [pedidoId], references: [id])
   pedidoId    Int
+  catalogo    ServicoCatalogo? @relation(fields: [catalogoId], references: [id])
+  catalogoId  Int?
   tipoServico String
   quantidade  Int
   precoUnitario Decimal        @default(0) @db.Decimal(10, 2)
@@ -58,6 +60,7 @@ model ServicoCatalogo {
   funcao      String
   precoPadrao Decimal  @default(0) @db.Decimal(10, 2)
   createdAt   DateTime @default(now())
+  servicos    Servico[]
 }
 
 model ServicoExecucao {

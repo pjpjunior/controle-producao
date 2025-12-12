@@ -22,10 +22,12 @@ const funcoesArraySchema = z
   )
   .min(1, 'Selecione ao menos uma função');
 
+const passwordSchema = z.string().min(3, 'Senha deve conter ao menos 3 caracteres');
+
 const registerSchema = z.object({
   nome: z.string().min(2, 'Nome obrigatório'),
   email: emailSchema,
-  senha: z.string().min(6, 'Senha deve conter ao menos 6 caracteres'),
+  senha: passwordSchema,
   funcoes: funcoesArraySchema
 });
 
@@ -105,16 +107,35 @@ router.get('/seed-status', async (_req, res) => {
   }
 });
 
-const loginSchema = z.object({
-  email: emailSchema,
-  senha: z.string().min(1, 'Senha obrigatória')
-});
+const loginIdentifierSchema = z
+  .string()
+  .trim()
+  .min(1, 'Usuário ou e-mail obrigatório');
+
+const loginSchema = z
+  .object({
+    login: loginIdentifierSchema.optional(),
+    email: emailSchema.optional(),
+    senha: z.string().min(1, 'Senha obrigatória')
+  })
+  .refine((data) => Boolean(data.login ?? data.email), {
+    message: 'Usuário ou e-mail obrigatório',
+    path: ['login']
+  });
 
 router.post('/login', async (req, res) => {
   try {
-    const { email, senha } = loginSchema.parse(req.body);
+    const { login, email, senha } = loginSchema.parse(req.body);
+    const identificador = (login ?? email ?? '').trim();
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: { equals: identificador, mode: 'insensitive' } },
+          { nome: { equals: identificador, mode: 'insensitive' } }
+        ]
+      }
+    });
     if (!user) {
       return res.status(401).json({ message: 'Credenciais inválidas' });
     }

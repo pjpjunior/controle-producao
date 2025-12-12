@@ -25,6 +25,17 @@ const importSchema = z
 
 router.use(authMiddleware, adminOnly);
 
+const upsertFuncoes = (funcoes: string[]) =>
+  Promise.all(
+    funcoes.map((funcao) =>
+      prisma.funcao.upsert({
+        where: { nome: funcao },
+        update: {},
+        create: { nome: funcao }
+      })
+    )
+  );
+
 router.get('/', async (_req, res) => {
   try {
     const itens = await prisma.servicoCatalogo.findMany({
@@ -39,11 +50,18 @@ router.get('/', async (_req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const data = catalogoSchema.parse(req.body);
+    const parsed = catalogoSchema.parse(req.body);
+    const data = {
+      nome: parsed.nome.trim(),
+      funcao: parsed.funcao.trim().toLowerCase(),
+      precoPadrao: parsed.precoPadrao
+    };
+    const funcao = data.funcao;
+    await upsertFuncoes([funcao]);
     const item = await prisma.servicoCatalogo.create({
       data: {
-        nome: data.nome.trim(),
-        funcao: data.funcao.trim().toLowerCase(),
+        nome: data.nome,
+        funcao,
         precoPadrao: data.precoPadrao
       }
     });
@@ -69,9 +87,25 @@ router.post('/import', async (req, res) => {
       precoPadrao: item.precoPadrao
     }));
 
-    const result = await prisma.servicoCatalogo.createMany({
-      data,
-      skipDuplicates: true
+    const funcoes = Array.from(new Set(data.map((item) => item.funcao)));
+
+    const result = await prisma.$transaction(async (tx) => {
+      await Promise.all(
+        funcoes.map((funcao) =>
+          tx.funcao.upsert({
+            where: { nome: funcao },
+            update: {},
+            create: { nome: funcao }
+          })
+        )
+      );
+
+      const created = await tx.servicoCatalogo.createMany({
+        data,
+        skipDuplicates: true
+      });
+
+      return created;
     });
 
     res.json({ imported: result.count });
@@ -90,7 +124,12 @@ router.patch('/:id', async (req, res) => {
     return res.status(400).json({ message: 'ID inválido' });
   }
   try {
-    const data = catalogoSchema.partial().parse(req.body);
+    const parsed = catalogoSchema.partial().parse(req.body);
+    const data = {
+      ...(parsed.nome ? { nome: parsed.nome.trim() } : {}),
+      ...(parsed.funcao ? { funcao: parsed.funcao.trim().toLowerCase() } : {}),
+      ...(typeof parsed.precoPadrao === 'number' ? { precoPadrao: parsed.precoPadrao } : {})
+    };
     const item = await prisma.servicoCatalogo.update({
       where: { id },
       data
