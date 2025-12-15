@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { FuncaoUsuario } from '../types';
 
 interface AdminNavBarProps {
   title: string;
@@ -10,12 +11,15 @@ const AdminNavBar = ({ title, subtitle }: AdminNavBarProps) => {
   const { user, logout } = useAuth();
   const location = useLocation();
 
-  const navItems = [
-    { to: '/admin', label: 'Criar' },
-    { to: '/admin/catalogo-servicos', label: 'Catálogo de serviços' },
-    { to: '/admin/gestao', label: 'Usuários' },
-    { to: '/relatorios', label: 'Relatórios' }
+  const navItems: Array<{ to: string; label: string; roles?: FuncaoUsuario[] }> = [
+    { to: '/admin', label: 'Criar', roles: ['admin', 'gerente'] }
   ];
+
+  const allowedNavItems = navItems.filter((item) => {
+    if (!item.roles) return true;
+    const funcoesUsuario = user?.funcoes ?? [];
+    return item.roles.some((role) => funcoesUsuario.includes(role));
+  });
 
   return (
     <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur">
@@ -32,7 +36,7 @@ const AdminNavBar = ({ title, subtitle }: AdminNavBarProps) => {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {navItems.map((item) => (
+          {allowedNavItems.map((item) => (
             <Link
               key={item.to}
               to={item.to}

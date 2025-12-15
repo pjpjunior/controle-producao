@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 import { authMiddlewareWithUserCheck as authMiddleware } from '../middlewares/auth';
 import { adminOnly } from '../middlewares/adminOnly';
+import { requireRole } from '../middlewares/roleGuard';
 
 const router = Router();
 
@@ -23,7 +24,7 @@ const importSchema = z
   .min(1, 'Envie ao menos um serviço')
   .max(500, 'Importe no máximo 500 itens por vez');
 
-router.use(authMiddleware, adminOnly);
+router.use(authMiddleware);
 
 const upsertFuncoes = (funcoes: string[]) =>
   Promise.all(
@@ -36,7 +37,7 @@ const upsertFuncoes = (funcoes: string[]) =>
     )
   );
 
-router.get('/', async (_req, res) => {
+router.get('/', requireRole('gerente'), async (_req, res) => {
   try {
     const itens = await prisma.servicoCatalogo.findMany({
       orderBy: { nome: 'asc' }
@@ -48,7 +49,7 @@ router.get('/', async (_req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', adminOnly, async (req, res) => {
   try {
     const parsed = catalogoSchema.parse(req.body);
     const data = {
@@ -78,7 +79,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.post('/import', async (req, res) => {
+router.post('/import', adminOnly, async (req, res) => {
   try {
     const parsed = importSchema.parse(req.body?.items ?? req.body);
     const data = parsed.map((item) => ({
@@ -118,7 +119,7 @@ router.post('/import', async (req, res) => {
   }
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', adminOnly, async (req, res) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: 'ID inválido' });
@@ -147,7 +148,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', adminOnly, async (req, res) => {
   const id = Number(req.params.id);
   if (Number.isNaN(id)) {
     return res.status(400).json({ message: 'ID inválido' });

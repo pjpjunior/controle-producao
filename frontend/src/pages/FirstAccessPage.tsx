@@ -38,7 +38,9 @@ const FirstAccessPage = () => {
 
   useEffect(() => {
     if (user) {
-      navigate(user.funcoes.includes('admin') ? '/admin' : '/operador', { replace: true });
+      const isAdmin = user.funcoes.includes('admin');
+      const isGerente = user.funcoes.includes('gerente');
+      navigate(isAdmin || isGerente ? '/admin' : '/operador', { replace: true });
     }
   }, [navigate, user]);
 

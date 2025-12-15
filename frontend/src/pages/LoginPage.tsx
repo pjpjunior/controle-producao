@@ -39,7 +39,9 @@ const LoginPage = () => {
 
     try {
       const user = await login(loginInput, senha);
-      const destino = user.funcoes.includes('admin') ? '/admin' : '/operador';
+      const isAdmin = user.funcoes.includes('admin');
+      const isGerente = user.funcoes.includes('gerente');
+      const destino = isAdmin || isGerente ? '/admin' : '/operador';
       navigate(destino, { replace: true });
     } catch (err: any) {
       const message = err?.response?.data?.message ?? 'Não foi possível realizar o login';

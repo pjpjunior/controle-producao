@@ -203,9 +203,6 @@ const OperatorDashboard = () => {
           </div>
           <div className="flex items-center gap-4">
             <p className="text-sm">{user?.nome}</p>
-            <Link to="/relatorios" className="btn-secondary text-slate-200">
-              Relatórios
-            </Link>
             <button
               onClick={logout}
               className="px-4 py-2 rounded-xl border border-slate-700 hover:border-red-400 hover:text-red-300 transition text-sm"

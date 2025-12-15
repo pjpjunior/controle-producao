@@ -4,7 +4,6 @@ import AdminDashboard from './pages/AdminDashboard';
 import OperatorDashboard from './pages/OperatorDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import TeamManagementPage from './pages/TeamManagementPage';
-import ReportsPage from './pages/ReportsPage';
 import FirstAccessPage from './pages/FirstAccessPage';
 import ServiceCatalogAdminPage from './pages/ServiceCatalogAdminPage';
 
@@ -18,7 +17,7 @@ function App() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute requiredRole="admin">
+            <ProtectedRoute requiredRole="gerente">
               <AdminDashboard />
             </ProtectedRoute>
           }
@@ -36,14 +35,6 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <ServiceCatalogAdminPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/relatorios"
-          element={
-            <ProtectedRoute>
-              <ReportsPage />
             </ProtectedRoute>
           }
         />

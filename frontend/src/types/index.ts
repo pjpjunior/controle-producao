@@ -1,4 +1,13 @@
-export type FuncaoUsuario = 'admin' | 'corte' | 'fita' | 'furacao' | 'usinagem' | 'montagem' | 'expedicao' | string;
+export type FuncaoUsuario =
+  | 'admin'
+  | 'gerente'
+  | 'corte'
+  | 'fita'
+  | 'furacao'
+  | 'usinagem'
+  | 'montagem'
+  | 'expedicao'
+  | string;
 
 export type ServicoStatus = 'pendente' | 'em_execucao' | 'pausado' | 'finalizado';
 

@@ -122,13 +122,14 @@ router.delete('/:id', adminOnly, async (req, res) => {
   }
 });
 
-router.get('/', adminOnly, async (_req, res) => {
+router.get('/', requireRole('gerente'), async (req, res) => {
   try {
+    const includePreco = req.user?.funcoes.includes('admin') ?? false;
     const pedidos = await prisma.pedido.findMany({
       orderBy: { dataCriacao: 'desc' },
       include: pedidoInclude
     });
-    res.json(pedidos.map((pedido) => mapPedidoResponse(pedido, true)));
+    res.json(pedidos.map((pedido) => mapPedidoResponse(pedido, includePreco)));
   } catch (error) {
     console.error('Erro ao listar pedidos', error);
     res.status(500).json({ message: 'Não foi possível buscar os pedidos' });
@@ -199,7 +200,7 @@ const updateServicoSchema = z
     path: ['tipoServico']
   });
 
-router.post('/:id/servicos', adminOnly, async (req, res) => {
+router.post('/:id/servicos', requireRole('gerente'), async (req, res) => {
   const pedidoId = Number(req.params.id);
   if (Number.isNaN(pedidoId)) {
     return res.status(400).json({ message: 'ID inválido' });

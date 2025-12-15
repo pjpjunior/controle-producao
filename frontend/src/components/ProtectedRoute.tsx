@@ -23,7 +23,11 @@ const ProtectedRoute: React.FC<Props> = ({ children, requiredRole }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (requiredRole && !user.funcoes.includes(requiredRole)) {
+  const hasRequiredRole = requiredRole
+    ? user.funcoes.includes(requiredRole) || user.funcoes.includes('admin')
+    : true;
+
+  if (!hasRequiredRole) {
     return <Navigate to="/operador" replace />;
   }
 
