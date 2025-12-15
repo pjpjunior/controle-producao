@@ -4,6 +4,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5000"]
     ports:
       - "5000:5000"
@@ -26,6 +27,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: ["npm", "run", "dev"]
     expose:
       - "3000"
@@ -47,6 +49,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     command: ["npm", "run", "prisma:migrate-deploy"]
     env_file:
       - .env
@@ -62,6 +65,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: app-postgres
+    restart: unless-stopped
     env_file:
       - .env
     volumes:

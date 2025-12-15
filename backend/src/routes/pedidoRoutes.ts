@@ -4,6 +4,7 @@ import { z } from 'zod';
 import prisma from '../config/prisma';
 import { authMiddlewareWithUserCheck as authMiddleware } from '../middlewares/auth';
 import { adminOnly } from '../middlewares/adminOnly';
+import { requireRole } from '../middlewares/roleGuard';
 
 const router = Router();
 
@@ -66,7 +67,7 @@ const mapPedidoResponse = (
   servicos: pedido.servicos.map((servico) => mapServicoResponse(servico, includePreco))
 });
 
-router.post('/', adminOnly, async (req, res) => {
+router.post('/', requireRole('gerente'), async (req, res) => {
   try {
     const data = createPedidoSchema.parse(req.body);
 
