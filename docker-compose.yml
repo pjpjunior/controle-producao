@@ -1,6 +1,6 @@
 services:
   frontend:
-    container_name: app-frontend
+    container_name: producao-frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -23,7 +23,7 @@ services:
       - internal_net
 
   backend:
-    container_name: app-backend
+    container_name: producao-backend
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -45,7 +45,7 @@ services:
       - internal_net
 
   migrations:
-    container_name: app-migrations
+    container_name: producao-migrations
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -64,7 +64,7 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: app-postgres
+    container_name: producao-postgres
     restart: unless-stopped
     env_file:
       - .env
