@@ -49,7 +49,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    restart: unless-stopped
+    restart: "no"
     command: ["npm", "run", "prisma:migrate-deploy"]
     env_file:
       - .env
